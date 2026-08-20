@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "/Users/tom/Downloads/swift-e-connect-main/node_modules/.bin/vite",
+      "runtimeArgs": ["dev"],
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}
