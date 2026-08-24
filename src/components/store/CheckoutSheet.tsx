@@ -82,15 +82,17 @@ async function pollUntilReady(
 
 export function CheckoutSheet({
   pkg,
+  defaultEmail,
   onOpenChange,
   onComplete,
 }: {
   pkg: Package | null;
+  defaultEmail?: string | undefined;
   onOpenChange: (open: boolean) => void;
   onComplete: (esim: EsimResult) => void;
 }) {
   const [step, setStep] = useState(1);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(defaultEmail ?? "");
   const [device, setDevice] = useState<string>("ios");
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -99,9 +101,10 @@ export function CheckoutSheet({
     if (pkg) {
       setStep(1);
       setError(null);
+      setEmail((current) => current || defaultEmail || "");
     }
     return () => abortRef.current?.abort();
-  }, [pkg]);
+  }, [pkg, defaultEmail]);
 
   const purchase = useMutation({
     mutationFn: async (paymentMethod: string) => {

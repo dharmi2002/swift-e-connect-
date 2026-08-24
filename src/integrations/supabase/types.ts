@@ -25,6 +25,7 @@ export type Database = {
           smdp_address: string | null;
           status: string;
           transaction_id: string | null;
+          user_id: string | null;
         };
         Insert: {
           activation_code?: string | null;
@@ -42,6 +43,7 @@ export type Database = {
           smdp_address?: string | null;
           status?: string;
           transaction_id?: string | null;
+          user_id?: string | null;
         };
         Update: {
           activation_code?: string | null;
@@ -59,6 +61,7 @@ export type Database = {
           smdp_address?: string | null;
           status?: string;
           transaction_id?: string | null;
+          user_id?: string | null;
         };
         Relationships: [
           {
@@ -69,6 +72,27 @@ export type Database = {
             referencedColumns: ["code"];
           },
         ];
+      };
+      profiles: {
+        Row: {
+          id: string;
+          email: string;
+          full_name: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          email: string;
+          full_name?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          full_name?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
       };
       packages: {
         Row: {

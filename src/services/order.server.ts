@@ -4,6 +4,15 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { createOrder } from "./esimaccess";
+import { getOptionalUserId } from "@/integrations/supabase/auth-optional.server";
+
+// eSIMAccess is a paid wholesale API — until real credentials are configured,
+// fall back to a mock provisioning result so the storefront flow (and demos)
+// can run end-to-end without a live upstream account.
+function isEsimAccessConfigured(): boolean {
+  const key = process.env["ESIM_ACCESS_API_KEY"];
+  return !!key && !key.startsWith("your-");
+}
 
 // ---------------------------------------------------------------------------
 // Place Order — called from CheckoutSheet
@@ -31,11 +40,36 @@ export const placeOrder = createServerFn({ method: "POST" })
 
     // Generate unique transaction ID
     const transactionId = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const userId = await getOptionalUserId();
 
-    // Call eSIMAccess upstream
-    const upstream = await createOrder(packageCode, transactionId);
+    if (isEsimAccessConfigured()) {
+      const upstream = await createOrder(packageCode, transactionId);
 
-    // Insert order as PROCESSING — webhook will complete it
+      // Insert order as PROCESSING — webhook will complete it
+      const { data: order, error } = await supabaseAdmin
+        .from("orders")
+        .insert({
+          customer_email: email.trim(),
+          package_code: packageCode,
+          device_type: deviceType,
+          payment_method: paymentMethod,
+          amount_usd: pkg.retail_price_usd,
+          status: "processing",
+          transaction_id: transactionId,
+          order_no: upstream.orderNo,
+          user_id: userId,
+        })
+        .select("id, status")
+        .single();
+
+      if (error) throw new Error("Failed to create order");
+
+      return { orderId: order!.id, status: order!.status };
+    }
+
+    // Demo mode: no eSIMAccess account configured — complete immediately with mock delivery details
+    const activationCode = transactionId;
+    const smdpAddress = "consumer.rsp.passportsim.io";
     const { data: order, error } = await supabaseAdmin
       .from("orders")
       .insert({
@@ -44,9 +78,16 @@ export const placeOrder = createServerFn({ method: "POST" })
         device_type: deviceType,
         payment_method: paymentMethod,
         amount_usd: pkg.retail_price_usd,
-        status: "processing",
+        status: "completed",
         transaction_id: transactionId,
-        order_no: upstream.orderNo,
+        order_no: `DEMO-${transactionId}`,
+        user_id: userId,
+        esim_iccid: `8944${Math.random().toString().slice(2, 16)}`,
+        smdp_address: smdpAddress,
+        activation_code: activationCode,
+        qr_code_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+          `LPA:1$${smdpAddress}$${activationCode}`,
+        )}`,
       })
       .select("id, status")
       .single();

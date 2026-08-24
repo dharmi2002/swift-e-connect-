@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Globe2, Search, Smartphone, Zap, ShieldCheck, Mail, Headphones } from "lucide-react";
+import { Globe2, Search, Smartphone, Zap, ShieldCheck, Mail, Headphones, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,6 +13,7 @@ import { CheckoutSheet } from "@/components/store/CheckoutSheet";
 import { EsimReadyDialog, type EsimResult } from "@/components/store/EsimReadyDialog";
 import { CompatibilityDialog } from "@/components/store/CompatibilityDialog";
 import { packagesQuery, type Package } from "@/lib/packages";
+import { useAuth } from "@/hooks/use-auth";
 import heroImage from "@/assets/hero-traveler.jpg";
 
 export const Route = createFileRoute("/")({
@@ -38,6 +39,7 @@ const quickFilters = ["East Africa", "Dubai", "Europe", "USA"];
 
 function Home() {
   const { data, isLoading } = useQuery(packagesQuery);
+  const { user, signOut } = useAuth();
   const [search, setSearch] = useState("");
   const [showLocal, setShowLocal] = useState(false);
   const [selected, setSelected] = useState<Package | null>(null);
@@ -57,19 +59,40 @@ function Home() {
   return (
     <div className="min-h-screen bg-background font-sans">
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
-        <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
           <a href="/" className="flex min-w-0 items-center gap-2">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-primary text-primary-foreground">
               <Globe2 className="h-5 w-5" />
             </span>
             <span className="truncate text-lg font-extrabold tracking-tight">PassportSIM</span>
           </a>
-          <CompatibilityDialog>
-            <Button variant="soft" size="sm" className="shrink-0">
-              <Smartphone /> <span className="hidden sm:inline">Compatibility</span>
-              <span className="sm:hidden">Check</span>
-            </Button>
-          </CompatibilityDialog>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <CompatibilityDialog>
+              <Button variant="soft" size="sm">
+                <Smartphone /> <span className="hidden sm:inline">Compatibility</span>
+                <span className="sm:hidden">Check</span>
+              </Button>
+            </CompatibilityDialog>
+            {user ? (
+              <div className="flex items-center gap-2">
+                <span className="hidden items-center gap-1.5 text-sm font-medium text-muted-foreground sm:flex">
+                  <User className="h-4 w-4" /> {user.email}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => signOut()}>
+                  Sign out
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/login">Sign in</Link>
+                </Button>
+                <Button asChild variant="hero" size="sm">
+                  <Link to="/signup">Create account</Link>
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -206,6 +229,7 @@ function Home() {
 
       <CheckoutSheet
         pkg={selected}
+        defaultEmail={user?.email}
         onOpenChange={(open) => !open && setSelected(null)}
         onComplete={setEsim}
       />
