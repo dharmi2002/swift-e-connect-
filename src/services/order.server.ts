@@ -20,13 +20,18 @@ function isEsimAccessConfigured(): boolean {
 
 export const placeOrder = createServerFn({ method: "POST" })
   .validator(
-    (input: { email: string; packageCode: string; deviceType: string; paymentMethod: string }) =>
-      input,
+    (input: {
+      email: string;
+      packageCode: string;
+      deviceType: string;
+      paymentMethod: string;
+      stripePaymentIntentId?: string | undefined;
+    }) => input,
   )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const { email, packageCode, deviceType, paymentMethod } = data;
+    const { email, packageCode, deviceType, paymentMethod, stripePaymentIntentId } = data;
 
     // Validate package exists and is active
     const { data: pkg } = await supabaseAdmin
@@ -37,6 +42,23 @@ export const placeOrder = createServerFn({ method: "POST" })
       .single();
 
     if (!pkg) throw new Error("Package not found or inactive");
+
+    // Never trust a client-side "payment succeeded" claim — re-verify with Stripe directly.
+    if (paymentMethod === "stripe") {
+      if (!stripePaymentIntentId) throw new Error("Missing payment confirmation");
+
+      const { stripe } = await import("./stripe.server");
+      const intent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+
+      if (intent.status !== "succeeded") throw new Error("Payment was not completed");
+      if (intent.metadata["packageCode"] !== packageCode) {
+        throw new Error("Payment does not match the selected plan");
+      }
+      const expectedCents = Math.round(pkg.retail_price_usd * 100);
+      if (intent.amount !== expectedCents || intent.currency !== "usd") {
+        throw new Error("Payment amount does not match the selected plan");
+      }
+    }
 
     // Generate unique transaction ID
     const transactionId = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
