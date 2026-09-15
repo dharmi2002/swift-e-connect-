@@ -15,6 +15,105 @@ function isEsimAccessConfigured(): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Shared helpers — reused by the consumer checkout flow (placeOrder) and the
+// business flows (purchaseForEmployee, assignSeat in bulk.server.ts)
+// ---------------------------------------------------------------------------
+
+/** Re-verify a Stripe PaymentIntent server-side — never trust a client-side "succeeded" claim. */
+export async function verifyStripePayment(
+  stripePaymentIntentId: string,
+  packageCode: string,
+  amountUsd: number,
+): Promise<void> {
+  const { stripe } = await import("./stripe.server");
+  const intent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
+
+  if (intent.status !== "succeeded") throw new Error("Payment was not completed");
+  if (intent.metadata["packageCode"] !== packageCode) {
+    throw new Error("Payment does not match the selected plan");
+  }
+  const expectedCents = Math.round(amountUsd * 100);
+  if (intent.amount !== expectedCents || intent.currency !== "usd") {
+    throw new Error("Payment amount does not match the selected plan");
+  }
+}
+
+/**
+ * Create one eSIM order: calls eSIMAccess (or falls back to a mock completed
+ * order in demo mode), and inserts the resulting `orders` row.
+ *
+ * `recipientEmail` is who gets the QR/activation email — for a business order
+ * this is the employee's own address, decoupled from whichever admin paid.
+ */
+export async function provisionEsimOrder(params: {
+  packageCode: string;
+  recipientEmail: string;
+  deviceType?: string | undefined;
+  paymentMethod: string;
+  amountUsd: number;
+  userId?: string | null | undefined;
+  organizationId?: string | undefined;
+  employeeId?: string | undefined;
+}): Promise<{ orderId: string; status: string }> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  const transactionId = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const recipientEmail = params.recipientEmail.trim();
+
+  const baseRow = {
+    customer_email: recipientEmail,
+    recipient_email: recipientEmail,
+    package_code: params.packageCode,
+    device_type: params.deviceType ?? "ios",
+    payment_method: params.paymentMethod,
+    amount_usd: params.amountUsd,
+    transaction_id: transactionId,
+    user_id: params.userId ?? null,
+    organization_id: params.organizationId ?? null,
+    employee_id: params.employeeId ?? null,
+  };
+
+  if (isEsimAccessConfigured()) {
+    const upstream = await createOrder(params.packageCode, transactionId);
+
+    // Insert order as PROCESSING — webhook will complete it
+    const { data: order, error } = await supabaseAdmin
+      .from("orders")
+      .insert({ ...baseRow, status: "processing", order_no: upstream.orderNo })
+      .select("id, status")
+      .single();
+
+    if (error) throw new Error("Failed to create order");
+
+    return { orderId: order!.id, status: order!.status };
+  }
+
+  // Demo mode: no eSIMAccess account configured — complete immediately with mock delivery details
+  const activationCode = transactionId;
+  const smdpAddress = "consumer.rsp.passportsim.io";
+  const { data: order, error } = await supabaseAdmin
+    .from("orders")
+    .insert({
+      ...baseRow,
+      status: "completed",
+      order_no: `DEMO-${transactionId}`,
+      activated_at: new Date().toISOString(),
+      esim_iccid: `8944${Math.random().toString().slice(2, 16)}`,
+      smdp_address: smdpAddress,
+      activation_code: activationCode,
+      qr_code_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+        `LPA:1$${smdpAddress}$${activationCode}`,
+      )}`,
+    })
+    .select("id, status")
+    .single();
+
+  if (error) throw new Error("Failed to create order");
+
+  return { orderId: order!.id, status: order!.status };
+}
+
+// ---------------------------------------------------------------------------
 // Place Order — called from CheckoutSheet
 // ---------------------------------------------------------------------------
 
@@ -43,80 +142,72 @@ export const placeOrder = createServerFn({ method: "POST" })
 
     if (!pkg) throw new Error("Package not found or inactive");
 
-    // Never trust a client-side "payment succeeded" claim — re-verify with Stripe directly.
     if (paymentMethod === "stripe") {
       if (!stripePaymentIntentId) throw new Error("Missing payment confirmation");
-
-      const { stripe } = await import("./stripe.server");
-      const intent = await stripe.paymentIntents.retrieve(stripePaymentIntentId);
-
-      if (intent.status !== "succeeded") throw new Error("Payment was not completed");
-      if (intent.metadata["packageCode"] !== packageCode) {
-        throw new Error("Payment does not match the selected plan");
-      }
-      const expectedCents = Math.round(pkg.retail_price_usd * 100);
-      if (intent.amount !== expectedCents || intent.currency !== "usd") {
-        throw new Error("Payment amount does not match the selected plan");
-      }
+      await verifyStripePayment(stripePaymentIntentId, packageCode, pkg.retail_price_usd);
     }
 
-    // Generate unique transaction ID
-    const transactionId = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const userId = await getOptionalUserId();
 
-    if (isEsimAccessConfigured()) {
-      const upstream = await createOrder(packageCode, transactionId);
+    return provisionEsimOrder({
+      packageCode,
+      recipientEmail: email,
+      deviceType,
+      paymentMethod,
+      amountUsd: pkg.retail_price_usd,
+      userId,
+    });
+  });
 
-      // Insert order as PROCESSING — webhook will complete it
-      const { data: order, error } = await supabaseAdmin
-        .from("orders")
-        .insert({
-          customer_email: email.trim(),
-          package_code: packageCode,
-          device_type: deviceType,
-          payment_method: paymentMethod,
-          amount_usd: pkg.retail_price_usd,
-          status: "processing",
-          transaction_id: transactionId,
-          order_no: upstream.orderNo,
-          user_id: userId,
-        })
-        .select("id, status")
-        .single();
+// ---------------------------------------------------------------------------
+// Purchase for Employee — business admin buys a plan for one named employee
+// ---------------------------------------------------------------------------
 
-      if (error) throw new Error("Failed to create order");
+export const purchaseForEmployee = createServerFn({ method: "POST" })
+  .validator(
+    (input: { employeeId: string; packageCode: string; stripePaymentIntentId: string }) => input,
+  )
+  .handler(async ({ data }) => {
+    const { employeeId, packageCode, stripePaymentIntentId } = data;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-      return { orderId: order!.id, status: order!.status };
-    }
+    const userId = await getOptionalUserId();
+    if (!userId) throw new Error("Sign in required");
 
-    // Demo mode: no eSIMAccess account configured — complete immediately with mock delivery details
-    const activationCode = transactionId;
-    const smdpAddress = "consumer.rsp.passportsim.io";
-    const { data: order, error } = await supabaseAdmin
-      .from("orders")
-      .insert({
-        customer_email: email.trim(),
-        package_code: packageCode,
-        device_type: deviceType,
-        payment_method: paymentMethod,
-        amount_usd: pkg.retail_price_usd,
-        status: "completed",
-        transaction_id: transactionId,
-        order_no: `DEMO-${transactionId}`,
-        user_id: userId,
-        esim_iccid: `8944${Math.random().toString().slice(2, 16)}`,
-        smdp_address: smdpAddress,
-        activation_code: activationCode,
-        qr_code_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
-          `LPA:1$${smdpAddress}$${activationCode}`,
-        )}`,
-      })
-      .select("id, status")
+    const { data: employee } = await supabaseAdmin
+      .from("employees")
+      .select("id, email, organization_id")
+      .eq("id", employeeId)
+      .eq("is_active", true)
       .single();
+    if (!employee) throw new Error("Employee not found");
 
-    if (error) throw new Error("Failed to create order");
+    const { data: org } = await supabaseAdmin
+      .from("organizations")
+      .select("id, owner_user_id")
+      .eq("id", employee.organization_id)
+      .single();
+    if (!org || org.owner_user_id !== userId) throw new Error("Not authorized for this employee");
 
-    return { orderId: order!.id, status: order!.status };
+    const { data: pkg } = await supabaseAdmin
+      .from("packages")
+      .select("retail_price_usd")
+      .eq("code", packageCode)
+      .eq("is_active", true)
+      .single();
+    if (!pkg) throw new Error("Package not found or inactive");
+
+    await verifyStripePayment(stripePaymentIntentId, packageCode, pkg.retail_price_usd);
+
+    return provisionEsimOrder({
+      packageCode,
+      recipientEmail: employee.email,
+      paymentMethod: "stripe",
+      amountUsd: pkg.retail_price_usd,
+      userId,
+      organizationId: org.id,
+      employeeId: employee.id,
+    });
   });
 
 // ---------------------------------------------------------------------------

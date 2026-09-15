@@ -30,7 +30,7 @@ export async function pollStuckOrders(): Promise<{
 
   const { data: stuckOrders } = await supabaseAdmin
     .from("orders")
-    .select("id, order_no, customer_email, package_code")
+    .select("id, order_no, customer_email, recipient_email, package_code")
     .eq("status", "processing")
     .lt("created_at", cutoff)
     .limit(20);
@@ -59,6 +59,7 @@ export async function pollStuckOrders(): Promise<{
               activation_code: esim.ac,
               qr_code_url: esim.qrCodeUrl,
               smdp_address: esim.smdpAddress,
+              activated_at: new Date().toISOString(),
             })
             .eq("id", order.id);
 
@@ -71,7 +72,7 @@ export async function pollStuckOrders(): Promise<{
 
           if (pkg) {
             await sendEsimDeliveryEmail({
-              customerEmail: order.customer_email,
+              customerEmail: order.recipient_email ?? order.customer_email,
               packageName: pkg.name,
               dataMb: pkg.data_mb,
               validityDays: pkg.validity_days,

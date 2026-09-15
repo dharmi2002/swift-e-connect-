@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Globe2, Loader2 } from "lucide-react";
+import { Building2, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,21 +8,28 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 
-export const Route = createFileRoute("/signup")({
+export const Route = createFileRoute("/business/signup")({
   head: () => ({
-    meta: [{ title: "Create your account — PassportSIM" }],
+    meta: [{ title: "Register your business — PassportSIM" }],
   }),
-  component: SignupPage,
+  component: BusinessSignupPage,
 });
 
-const signupSchema = z.object({
-  fullName: z.string().trim().min(1, "Name is required").max(120),
-  email: z.string().trim().min(1, "Email is required").email("Enter a valid email").max(255),
+const businessSignupSchema = z.object({
+  companyName: z.string().trim().min(1, "Company name is required").max(160),
+  fullName: z.string().trim().min(1, "Your name is required").max(120),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Company email is required")
+    .email("Enter a valid email")
+    .max(255),
   password: z.string().min(6, "Password must be at least 6 characters").max(72),
 });
 
-function SignupPage() {
+function BusinessSignupPage() {
   const navigate = useNavigate();
+  const [companyName, setCompanyName] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +39,7 @@ function SignupPage() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = signupSchema.safeParse({ fullName, email, password });
+    const parsed = businessSignupSchema.safeParse({ companyName, fullName, email, password });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Invalid input");
       return;
@@ -43,7 +50,13 @@ function SignupPage() {
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: parsed.data.email,
       password: parsed.data.password,
-      options: { data: { full_name: parsed.data.fullName } },
+      options: {
+        data: {
+          full_name: parsed.data.fullName,
+          account_type: "business",
+          company_name: parsed.data.companyName,
+        },
+      },
     });
 
     setPending(false);
@@ -54,7 +67,7 @@ function SignupPage() {
     }
 
     if (data.session) {
-      navigate({ to: "/" });
+      navigate({ to: "/business" });
       return;
     }
 
@@ -67,16 +80,16 @@ function SignupPage() {
       <div className="w-full max-w-sm">
         <Link to="/" className="mb-6 flex items-center justify-center gap-2">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-primary text-primary-foreground">
-            <Globe2 className="h-5 w-5" />
+            <Building2 className="h-5 w-5" />
           </span>
-          <span className="text-lg font-extrabold tracking-tight">PassportSIM</span>
+          <span className="text-lg font-extrabold tracking-tight">PassportSIM for Business</span>
         </Link>
 
         <Card>
           <CardHeader>
-            <CardTitle>Create your account</CardTitle>
+            <CardTitle>Register your business</CardTitle>
             <CardDescription>
-              Save your orders and check out faster next time you travel.
+              Manage employee eSIMs or buy plans in bulk from one dashboard.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -93,17 +106,27 @@ function SignupPage() {
             ) : (
               <form onSubmit={onSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Full name</Label>
+                  <Label htmlFor="companyName">Company name</Label>
+                  <Input
+                    id="companyName"
+                    autoComplete="organization"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="Acme Ltd"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Your name</Label>
                   <Input
                     id="fullName"
                     autoComplete="name"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Jane Traveler"
+                    placeholder="Jane Admin"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">Company email</Label>
                   <Input
                     id="email"
                     type="email"
@@ -111,7 +134,7 @@ function SignupPage() {
                     autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
+                    placeholder="admin@acme.com"
                   />
                 </div>
                 <div className="space-y-2">
@@ -134,7 +157,7 @@ function SignupPage() {
                   disabled={pending}
                 >
                   {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Create account
+                  Create business account
                 </Button>
               </form>
             )}
@@ -143,17 +166,14 @@ function SignupPage() {
 
         {!confirmationSent && (
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Already have an account?{" "}
+            Already registered?{" "}
             <Link to="/login" className="font-medium text-primary underline underline-offset-4">
               Sign in
             </Link>
             <br />
-            Registering a business?{" "}
-            <Link
-              to="/business/signup"
-              className="font-medium text-primary underline underline-offset-4"
-            >
-              Create a business account
+            Buying an eSIM for yourself?{" "}
+            <Link to="/signup" className="font-medium text-primary underline underline-offset-4">
+              Create a personal account
             </Link>
           </p>
         )}

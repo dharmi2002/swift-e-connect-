@@ -10,12 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BusinessRouteImport } from './routes/business'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as BusinessIndexRouteImport } from './routes/business.index'
+import { Route as BusinessBulkRouteImport } from './routes/business.bulk'
+import { Route as BusinessEmployeesRouteImport } from './routes/business.employees'
+import { Route as BusinessSignupRouteImport } from './routes/business.signup'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BusinessRoute = BusinessRouteImport.update({
+  id: '/business',
+  path: '/business',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -28,33 +38,92 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BusinessIndexRoute = BusinessIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BusinessRoute,
+} as any)
+const BusinessBulkRoute = BusinessBulkRouteImport.update({
+  id: '/bulk',
+  path: '/bulk',
+  getParentRoute: () => BusinessRoute,
+} as any)
+const BusinessEmployeesRoute = BusinessEmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => BusinessRoute,
+} as any)
+const BusinessSignupRoute = BusinessSignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => BusinessRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/business': typeof BusinessRouteWithChildren
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/business/bulk': typeof BusinessBulkRoute
+  '/business/employees': typeof BusinessEmployeesRoute
+  '/business/signup': typeof BusinessSignupRoute
+  '/business/': typeof BusinessIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/business/bulk': typeof BusinessBulkRoute
+  '/business/employees': typeof BusinessEmployeesRoute
+  '/business/signup': typeof BusinessSignupRoute
+  '/business': typeof BusinessIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/business': typeof BusinessRouteWithChildren
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/business/bulk': typeof BusinessBulkRoute
+  '/business/employees': typeof BusinessEmployeesRoute
+  '/business/signup': typeof BusinessSignupRoute
+  '/business/': typeof BusinessIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/signup'
+  fullPaths:
+    | '/'
+    | '/business'
+    | '/login'
+    | '/signup'
+    | '/business/bulk'
+    | '/business/employees'
+    | '/business/signup'
+    | '/business/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/signup'
-  id: '__root__' | '/' | '/login' | '/signup'
+  to:
+    | '/'
+    | '/login'
+    | '/signup'
+    | '/business/bulk'
+    | '/business/employees'
+    | '/business/signup'
+    | '/business'
+  id:
+    | '__root__'
+    | '/'
+    | '/business'
+    | '/login'
+    | '/signup'
+    | '/business/bulk'
+    | '/business/employees'
+    | '/business/signup'
+    | '/business/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BusinessRoute: typeof BusinessRouteWithChildren
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
 }
@@ -66,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/business': {
+      id: '/business'
+      path: '/business'
+      fullPath: '/business'
+      preLoaderRoute: typeof BusinessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -82,11 +158,58 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/business/': {
+      id: '/business/'
+      path: '/'
+      fullPath: '/business/'
+      preLoaderRoute: typeof BusinessIndexRouteImport
+      parentRoute: typeof BusinessRoute
+    }
+    '/business/bulk': {
+      id: '/business/bulk'
+      path: '/bulk'
+      fullPath: '/business/bulk'
+      preLoaderRoute: typeof BusinessBulkRouteImport
+      parentRoute: typeof BusinessRoute
+    }
+    '/business/employees': {
+      id: '/business/employees'
+      path: '/employees'
+      fullPath: '/business/employees'
+      preLoaderRoute: typeof BusinessEmployeesRouteImport
+      parentRoute: typeof BusinessRoute
+    }
+    '/business/signup': {
+      id: '/business/signup'
+      path: '/signup'
+      fullPath: '/business/signup'
+      preLoaderRoute: typeof BusinessSignupRouteImport
+      parentRoute: typeof BusinessRoute
+    }
   }
 }
 
+interface BusinessRouteChildren {
+  BusinessBulkRoute: typeof BusinessBulkRoute
+  BusinessEmployeesRoute: typeof BusinessEmployeesRoute
+  BusinessSignupRoute: typeof BusinessSignupRoute
+  BusinessIndexRoute: typeof BusinessIndexRoute
+}
+
+const BusinessRouteChildren: BusinessRouteChildren = {
+  BusinessBulkRoute: BusinessBulkRoute,
+  BusinessEmployeesRoute: BusinessEmployeesRoute,
+  BusinessSignupRoute: BusinessSignupRoute,
+  BusinessIndexRoute: BusinessIndexRoute,
+}
+
+const BusinessRouteWithChildren = BusinessRoute._addFileChildren(
+  BusinessRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BusinessRoute: BusinessRouteWithChildren,
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
 }

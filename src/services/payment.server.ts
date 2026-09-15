@@ -37,3 +37,42 @@ export const createPaymentIntent = createServerFn({ method: "POST" })
       amountCents,
     };
   });
+
+// ---------------------------------------------------------------------------
+// Create Bulk Payment Intent — business admin buying N unassigned seats
+// ---------------------------------------------------------------------------
+
+export const createBulkPaymentIntent = createServerFn({ method: "POST" })
+  .validator((input: { packageCode: string; quantity: number }) => input)
+  .handler(async ({ data }) => {
+    const { packageCode, quantity } = data;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 500) {
+      throw new Error("Quantity must be between 1 and 500");
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { stripe } = await import("./stripe.server");
+
+    const { data: pkg } = await supabaseAdmin
+      .from("packages")
+      .select("retail_price_usd")
+      .eq("code", packageCode)
+      .eq("is_active", true)
+      .single();
+
+    if (!pkg) throw new Error("Package not found or inactive");
+
+    const amountCents = Math.round(pkg.retail_price_usd * quantity * 100);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: "usd",
+      automatic_payment_methods: { enabled: true },
+      metadata: { packageCode, quantity: String(quantity) },
+    });
+
+    return {
+      clientSecret: paymentIntent.client_secret!,
+      amountCents,
+    };
+  });

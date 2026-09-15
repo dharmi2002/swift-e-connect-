@@ -106,6 +106,14 @@ function LoginPage() {
           <Link to="/signup" className="font-medium text-primary underline underline-offset-4">
             Create an account
           </Link>
+          <br />
+          Registering a business?{" "}
+          <Link
+            to="/business/signup"
+            className="font-medium text-primary underline underline-offset-4"
+          >
+            Create a business account
+          </Link>
         </p>
       </div>
     </div>

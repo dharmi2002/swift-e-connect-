@@ -219,11 +219,11 @@ async function handleOrderStatus(
         activation_code: esim.ac,
         qr_code_url: esim.qrCodeUrl,
         smdp_address: esim.smdpAddress,
-
+        activated_at: new Date().toISOString(),
         raw_webhook_payload: JSON.parse(rawBody),
       })
       .eq("order_no", orderNo)
-      .select("customer_email, package_code")
+      .select("customer_email, recipient_email, package_code")
       .single();
 
     if (order) {
@@ -235,7 +235,7 @@ async function handleOrderStatus(
 
       if (pkg) {
         await sendEsimDeliveryEmail({
-          customerEmail: order.customer_email,
+          customerEmail: order.recipient_email ?? order.customer_email,
           packageName: pkg.name,
           dataMb: pkg.data_mb,
           validityDays: pkg.validity_days,

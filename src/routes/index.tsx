@@ -14,6 +14,7 @@ import { EsimReadyDialog, type EsimResult } from "@/components/store/EsimReadyDi
 import { CompatibilityDialog } from "@/components/store/CompatibilityDialog";
 import { packagesQuery, type Package } from "@/lib/packages";
 import { useAuth } from "@/hooks/use-auth";
+import { getMyOrganization } from "@/services/organization.server";
 import heroImage from "@/assets/hero-traveler.jpg";
 
 export const Route = createFileRoute("/")({
@@ -40,6 +41,11 @@ const quickFilters = ["East Africa", "Dubai", "Europe", "USA"];
 function Home() {
   const { data, isLoading } = useQuery(packagesQuery);
   const { user, signOut } = useAuth();
+  const orgQuery = useQuery({
+    queryKey: ["my-organization"],
+    queryFn: () => getMyOrganization(),
+    enabled: !!user,
+  });
   const [search, setSearch] = useState("");
   const [showLocal, setShowLocal] = useState(false);
   const [selected, setSelected] = useState<Package | null>(null);
@@ -78,12 +84,20 @@ function Home() {
                 <span className="hidden items-center gap-1.5 text-sm font-medium text-muted-foreground sm:flex">
                   <User className="h-4 w-4" /> {user.email}
                 </span>
+                {orgQuery.data && (
+                  <Button asChild variant="soft" size="sm">
+                    <Link to="/business">Business dashboard</Link>
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => signOut()}>
                   Sign out
                 </Button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/business/signup">For Business</Link>
+                </Button>
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/login">Sign in</Link>
                 </Button>

@@ -11,18 +11,22 @@ export function StripePaymentForm({
   amountUsd,
   onBack,
   onPaid,
+  createIntent,
 }: {
   packageCode: string;
   amountUsd: number;
   onBack: () => void;
   onPaid: (paymentIntentId: string) => void;
+  /** Override how the client secret is fetched — defaults to a single-package intent. */
+  createIntent?: () => Promise<{ clientSecret: string }>;
 }) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    createPaymentIntent({ data: { packageCode } })
+    const getIntent = createIntent ?? (() => createPaymentIntent({ data: { packageCode } }));
+    getIntent()
       .then((res) => {
         if (!cancelled) setClientSecret(res.clientSecret);
       })
@@ -32,6 +36,7 @@ export function StripePaymentForm({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [packageCode]);
 
   if (error) {
