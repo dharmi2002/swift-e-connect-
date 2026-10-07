@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { filterPackages, formatData, formatUsd, formatLocal, type Package } from "./packages";
+import {
+  africanDevelopmentPackages,
+  filterPackages,
+  formatData,
+  formatUsd,
+  formatLocal,
+  type Package,
+} from "./packages";
 
 describe("formatData", () => {
   it("returns MB for values under 1024", () => expect(formatData(500)).toBe("500 MB"));
@@ -81,5 +88,14 @@ describe("filterPackages", () => {
     expect(filterPackages(searchPackages, "kenya")).toHaveLength(1);
     expect(filterPackages(searchPackages, "ng")).toHaveLength(1);
     expect(filterPackages(searchPackages, "data pass")).toHaveLength(2);
+  });
+});
+
+describe("africanDevelopmentPackages", () => {
+  it("contains African country and regional plans for local development", () => {
+    expect(africanDevelopmentPackages.length).toBeGreaterThanOrEqual(10);
+    expect(africanDevelopmentPackages.some((pkg) => pkg.location_code === "KE")).toBe(true);
+    expect(africanDevelopmentPackages.some((pkg) => pkg.location_code === "NG")).toBe(true);
+    expect(africanDevelopmentPackages.some((pkg) => pkg.region_type === "regional")).toBe(true);
   });
 });

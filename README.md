@@ -215,6 +215,8 @@ src/
 
 `syncPackages()` fetches the full upstream catalog, applies a markup rule from `system_settings.markup_rule`, and upserts into the `packages` table. Default markup: 20% if no rule configured.
 
+When running `npm run dev` without Supabase credentials, the storefront uses a clearly scoped local African development catalog so the UX can be reviewed offline. This fallback is disabled in production and configured staging; those environments always use the live synced `packages` table.
+
 Call it via `POST /api/packages/sync` (with cron auth).
 
 ---
@@ -242,14 +244,14 @@ Call it via `POST /api/packages/sync` (with cron auth).
 
 ### Notify types
 
-| Type             | Action                                   |
-| ---------------- | ---------------------------------------- |
-| `CHECK_HEALTH`   | Returns `{ ok: true }` immediately       |
-| `ORDER_STATUS`   | Processes order completion (see below)   |
-| `ESIM_STATUS`    | Updates line lifecycle status and audit events |
+| Type             | Action                                            |
+| ---------------- | ------------------------------------------------- |
+| `CHECK_HEALTH`   | Returns `{ ok: true }` immediately                |
+| `ORDER_STATUS`   | Processes order completion (see below)            |
+| `ESIM_STATUS`    | Updates line lifecycle status and audit events    |
 | `DATA_USAGE`     | Updates used data shown in the business workspace |
-| `VALIDITY_USAGE` | Updates line expiry and audit events     |
-| `SMDP_EVENT`     | Logged only                              |
+| `VALIDITY_USAGE` | Updates line expiry and audit events              |
+| `SMDP_EVENT`     | Logged only                                       |
 
 ### ORDER_STATUS processing
 
@@ -434,20 +436,20 @@ CRON_SECRET="a-random-secret-for-cron-calls"
 | `TWILIO_ACCOUNT_SID`            | For OTP  | Server | Twilio Account SID                                   |
 | `TWILIO_AUTH_TOKEN`             | For OTP  | Server | Twilio API secret; never expose to the client        |
 | `TWILIO_VERIFY_SERVICE_SID`     | For OTP  | Server | Twilio Verify Service SID (`VA...`)                  |
-| `PAYSTACK_SECRET_KEY`            | For pay  | Server | Paystack secret key; never expose to the client     |
-| `PAYSTACK_CURRENCY`              | For pay  | Server | Three-letter currency, default `USD`               |
-| `PAYSTACK_CALLBACK_URL`          | For pay  | Server | Public `/payment` route                            |
-| `PUBLIC_APP_URL`                 | For mail | Server | Canonical HTTPS origin used in invite links       |
-| `PAYMENT_PROVIDER`               | ✅ prod  | Server | `paystack` blocks unpaid legacy fulfillment       |
-| `VITE_PAYMENT_PROVIDER`          | ✅ prod  | Client | Use `paystack` to show only secure checkout       |
+| `PAYSTACK_SECRET_KEY`           | For pay  | Server | Paystack secret key; never expose to the client      |
+| `PAYSTACK_CURRENCY`             | For pay  | Server | Three-letter currency, default `USD`                 |
+| `PAYSTACK_CALLBACK_URL`         | For pay  | Server | Public `/payment` route                              |
+| `PUBLIC_APP_URL`                | For mail | Server | Canonical HTTPS origin used in invite links          |
+| `PAYMENT_PROVIDER`              | ✅ prod  | Server | `paystack` blocks unpaid legacy fulfillment          |
+| `VITE_PAYMENT_PROVIDER`         | ✅ prod  | Client | Use `paystack` to show only secure checkout          |
 | `ESIM_ACCESS_API_KEY`           | ✅       | Server | eSIMAccess dashboard → API Keys                      |
 | `ESIM_ACCESS_BASE_URL`          | ❌       | Server | Defaults to `https://api.esimaccess.com/api/v1/open` |
 | `ESIM_ACCESS_WEBHOOK_SECRET`    | ❌       | Server | Enable signature verification on webhooks            |
 | `BREVO_API_KEY`                 | ✅       | Server | Brevo dashboard → SMTP & API → API Keys              |
 | `FROM_EMAIL`                    | ❌       | Server | Defaults to `noreply@passportsim.io`                 |
 | `FROM_NAME`                     | ❌       | Server | Defaults to `PassportSIM`                            |
-| `CRON_SECRET`                   | ✅ prod  | Server | Required for cron endpoints                         |
-| `ALLOW_UNAUTHENTICATED_CRON`    | Dev only | Server | Set `true` only for local development               |
+| `CRON_SECRET`                   | ✅ prod  | Server | Required for cron endpoints                          |
+| `ALLOW_UNAUTHENTICATED_CRON`    | Dev only | Server | Set `true` only for local development                |
 
 ---
 
@@ -510,21 +512,21 @@ npm run check:pilot     # tests, lint, and production build in one gate
 
 82 tests across these files:
 
-| File                                  | Tests | What it covers                                    |
-| ------------------------------------- | ----- | ------------------------------------------------- |
-| `src/__tests__/api-router.test.ts`    | 12    | Paystack/webhook signatures and cron auth         |
-| `src/__tests__/esimaccess.test.ts`    | 3     | eSIMAccess API error handling                     |
-| `src/__tests__/webhook-verify.test.ts`| 5     | HMAC-SHA256 signature verification                |
-| `src/lib/business.test.ts`            | 6     | Organization roles and business workflows        |
-| `src/lib/packages.test.ts`            | 17    | `formatData`, `formatUsd`, `formatLocal`, empty-search catalog behavior |
-| `src/lib/rate-limit.test.ts`          | 2     | OTP rate-limit behavior                           |
-| `src/lib/utils.test.ts`               | 5     | `cn()` class name merging                         |
-| `src/services/esimaccess.test.ts`     | 18    | `priceToUsd`, `applyMarkup`, mocked API calls    |
-| `src/services/email.test.ts`          | 1     | HTML escaping for provider-supplied email data   |
-| `src/services/payment.test.ts`        | 1     | Payment amount and fulfillment guards             |
-| `src/services/twilio-verify.test.ts`  | 3     | Twilio Verify request and registration flow       |
-| `src/services/webhook-verify.test.ts` | 5     | HMAC-SHA256 signature verification                |
-| `src/services/webhook.test.ts`        | 6     | Webhook envelope structure and statuses           |
+| File                                   | Tests | What it covers                                                          |
+| -------------------------------------- | ----- | ----------------------------------------------------------------------- |
+| `src/__tests__/api-router.test.ts`     | 12    | Paystack/webhook signatures and cron auth                               |
+| `src/__tests__/esimaccess.test.ts`     | 3     | eSIMAccess API error handling                                           |
+| `src/__tests__/webhook-verify.test.ts` | 5     | HMAC-SHA256 signature verification                                      |
+| `src/lib/business.test.ts`             | 6     | Organization roles and business workflows                               |
+| `src/lib/packages.test.ts`             | 17    | `formatData`, `formatUsd`, `formatLocal`, empty-search catalog behavior |
+| `src/lib/rate-limit.test.ts`           | 2     | OTP rate-limit behavior                                                 |
+| `src/lib/utils.test.ts`                | 5     | `cn()` class name merging                                               |
+| `src/services/esimaccess.test.ts`      | 18    | `priceToUsd`, `applyMarkup`, mocked API calls                           |
+| `src/services/email.test.ts`           | 1     | HTML escaping for provider-supplied email data                          |
+| `src/services/payment.test.ts`         | 1     | Payment amount and fulfillment guards                                   |
+| `src/services/twilio-verify.test.ts`   | 3     | Twilio Verify request and registration flow                             |
+| `src/services/webhook-verify.test.ts`  | 5     | HMAC-SHA256 signature verification                                      |
+| `src/services/webhook.test.ts`         | 6     | Webhook envelope structure and statuses                                 |
 
 ```bash
 npm test
