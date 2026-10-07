@@ -66,6 +66,8 @@ Registration verifies the owner phone number through Twilio Verify SMS before cr
 
 Paystack is the secure payment adapter. The server initializes a transaction, redirects the customer to Paystack, then verifies the returned reference and exact amount before calling eSIMAccess. The browser callback is never trusted as proof of payment. Set `PAYSTACK_SECRET_KEY`, `PAYSTACK_CURRENCY`, and `PAYSTACK_CALLBACK_URL`; use the test key first. Set both `PAYMENT_PROVIDER=paystack` and `VITE_PAYMENT_PROVIDER=paystack` for the controlled pilot. The original non-Paystack checkout path remains available only when both values are `legacy` for compatibility with existing deployments.
 
+Stripe compatibility is retained for existing deployments: set `PAYMENT_PROVIDER=legacy`, configure `STRIPE_SECRET_KEY` and `VITE_STRIPE_PUBLISHABLE_KEY`, and use the Stripe card form. Stripe PaymentIntents are re-verified server-side for status, package metadata, amount, and currency before supplier fulfillment.
+
 ### Operations now covered
 
 - Paystack payment state, references, exact-amount verification, idempotent supplier fulfillment records, payment event history, and cron recovery for paid-but-unfulfilled orders/top-ups.
@@ -514,7 +516,7 @@ npm run check:pilot     # tests, lint, and production build in one gate
 | `src/__tests__/esimaccess.test.ts`    | 3     | eSIMAccess API error handling                     |
 | `src/__tests__/webhook-verify.test.ts`| 5     | HMAC-SHA256 signature verification                |
 | `src/lib/business.test.ts`            | 6     | Organization roles and business workflows        |
-| `src/lib/packages.test.ts`            | 15    | `formatData`, `formatUsd`, `formatLocal`         |
+| `src/lib/packages.test.ts`            | 17    | `formatData`, `formatUsd`, `formatLocal`, empty-search catalog behavior |
 | `src/lib/rate-limit.test.ts`          | 2     | OTP rate-limit behavior                           |
 | `src/lib/utils.test.ts`               | 5     | `cn()` class name merging                         |
 | `src/services/esimaccess.test.ts`     | 18    | `priceToUsd`, `applyMarkup`, mocked API calls    |

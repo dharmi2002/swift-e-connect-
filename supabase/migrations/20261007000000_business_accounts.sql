@@ -9,6 +9,36 @@ create table if not exists public.organizations (
   created_at timestamptz not null default now()
 );
 
+-- Compatibility with the original business-account migration already used by
+-- existing deployments. Keep its columns and make the new membership model
+-- additive instead of requiring a destructive table replacement.
+alter table public.organizations add column if not exists slug text;
+alter table public.organizations add column if not exists created_by uuid references auth.users(id) on delete restrict;
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'owner_user_id'
+  ) then
+    update public.organizations set created_by = owner_user_id where created_by is null;
+    alter table public.organizations alter column owner_user_id drop not null;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'company_email'
+  ) then
+    alter table public.organizations alter column company_email drop not null;
+  end if;
+end $$;
+update public.organizations
+set slug = coalesce(
+  nullif(trim(both '-' from regexp_replace(lower(trim(name)), '[^a-z0-9]+', '-', 'g')), ''),
+  'org'
+) || '-' || left(id::text, 8)
+where slug is null;
+alter table public.organizations alter column slug set not null;
+create unique index if not exists organizations_slug_key on public.organizations(slug);
+
 create table if not exists public.organization_members (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -17,6 +47,26 @@ create table if not exists public.organization_members (
   created_at timestamptz not null default now(),
   primary key (organization_id, user_id)
 );
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'owner_user_id'
+  ) then
+    insert into public.organization_members (organization_id, user_id, role)
+    select id, coalesce(created_by, owner_user_id), 'owner'
+    from public.organizations
+    where coalesce(created_by, owner_user_id) is not null
+    on conflict (organization_id, user_id) do nothing;
+  else
+    insert into public.organization_members (organization_id, user_id, role)
+    select id, created_by, 'owner'
+    from public.organizations
+    where created_by is not null
+    on conflict (organization_id, user_id) do nothing;
+  end if;
+end $$;
 
 create table if not exists public.organization_invitations (
   id uuid primary key default gen_random_uuid(),

@@ -4,6 +4,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { createOrder } from "./esimaccess";
+import { verifyStripePayment } from "./payment.server";
 
 // ---------------------------------------------------------------------------
 // Place Order — called from CheckoutSheet
@@ -11,8 +12,13 @@ import { createOrder } from "./esimaccess";
 
 export const placeOrder = createServerFn({ method: "POST" })
   .validator(
-    (input: { email: string; packageCode: string; deviceType: string; paymentMethod: string }) =>
-      input,
+    (input: {
+      email: string;
+      packageCode: string;
+      deviceType: string;
+      paymentMethod: string;
+      stripePaymentIntentId?: string | undefined;
+    }) => input,
   )
   .handler(async ({ data }) => {
     if (process.env["PAYMENT_PROVIDER"] === "paystack") {
@@ -20,7 +26,7 @@ export const placeOrder = createServerFn({ method: "POST" })
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const { email, packageCode, deviceType, paymentMethod } = data;
+    const { email, packageCode, deviceType, paymentMethod, stripePaymentIntentId } = data;
 
     // Validate package exists and is active
     const { data: pkg } = await supabaseAdmin
@@ -31,6 +37,11 @@ export const placeOrder = createServerFn({ method: "POST" })
       .single();
 
     if (!pkg) throw new Error("Package not found or inactive");
+
+    if (paymentMethod === "stripe") {
+      if (!stripePaymentIntentId) throw new Error("Missing Stripe payment confirmation.");
+      await verifyStripePayment(stripePaymentIntentId, packageCode, Number(pkg.retail_price_usd));
+    }
 
     // Generate unique transaction ID
     const transactionId = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

@@ -45,6 +45,42 @@ async function paystack<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data;
 }
 
+/** Preserve the established Stripe checkout for deployments still using it. */
+export async function verifyStripePayment(
+  paymentIntentId: string,
+  packageCode: string,
+  amountUsd: number,
+) {
+  const { stripe } = await import("./stripe.server");
+  const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  if (intent.status !== "succeeded") throw new Error("Payment was not completed.");
+  if (intent.metadata["packageCode"] !== packageCode)
+    throw new Error("Payment does not match the selected plan.");
+  if (intent.amount !== Math.round(amountUsd * 100) || intent.currency !== "usd")
+    throw new Error("Payment amount does not match the selected plan.");
+}
+
+export const createPaymentIntent = createServerFn({ method: "POST" })
+  .validator((input: { packageCode: string }) => input)
+  .handler(async ({ data }) => {
+    const { data: pkg } = await supabaseAdmin
+      .from("packages")
+      .select("retail_price_usd")
+      .eq("code", data.packageCode)
+      .eq("is_active", true)
+      .single();
+    if (!pkg) throw new Error("Package not found or inactive.");
+
+    const { stripe } = await import("./stripe.server");
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(pkg.retail_price_usd) * 100),
+      currency: "usd",
+      automatic_payment_methods: { enabled: true },
+      metadata: { packageCode: data.packageCode },
+    });
+    return { clientSecret: paymentIntent.client_secret!, amountCents: paymentIntent.amount };
+  });
+
 export async function createPaystackCheckout(data: {
   email: string;
   packageCode: string;
