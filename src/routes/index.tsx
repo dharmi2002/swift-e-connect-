@@ -268,12 +268,12 @@ function Home() {
             </p>
             <div className="benefits-list">
               <Benefit
-                title="Save up to 60% on roaming"
-                text="Local rates, not operator roaming charges — you see the price before you buy."
+                title="Transparent plan pricing"
+                text="See the plan price, data allowance, validity and network coverage before you buy."
               />
               <Benefit
-                title="Install in under 5 minutes"
-                text="One tap or one scan, with guided steps for iOS and Android."
+                title="Guided installation"
+                text="Follow the installation steps for iOS and Android after delivery."
               />
               <Benefit
                 title="Fast, reliable networks"
@@ -284,8 +284,8 @@ function Home() {
                 text="Your physical SIM stays in for calls and one-time codes."
               />
               <Benefit
-                title="Support that answers"
-                text="Real people on live chat and email, 24/7, in your timezone."
+                title="Clear support guidance"
+                text="Find installation, coverage and account guidance in one place."
               />
             </div>
           </div>
@@ -873,13 +873,13 @@ function SiteFooter() {
       </div>
       <div className="page-shell footer-bottom">
         <span>
-          <CreditCard /> Card and mobile money, encrypted end to end
+          <CreditCard /> Secure payment options
         </span>
         <span>
-          <Zap /> Delivered in seconds, install before you fly
+          <Zap /> Digital delivery after provider confirmation
         </span>
         <span>
-          <Headphones /> 24/7 human support in your timezone
+          <Headphones /> Installation and coverage guidance
         </span>
       </div>
       <div className="page-shell legal">
