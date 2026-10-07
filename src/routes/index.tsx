@@ -61,7 +61,7 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const quickFilters = ["Japan", "Italy", "United States", "Dubai", "Global"];
+const quickFilters = ["Kenya", "Nigeria", "South Africa", "Ghana", "UAE"];
 
 function Home() {
   const { data, isLoading } = useQuery(packagesQuery);
