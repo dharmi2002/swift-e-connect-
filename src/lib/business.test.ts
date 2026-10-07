@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   canManageLines,
+  canManageRoles,
   canManageTeam,
   canViewBilling,
   isInvitableRole,
   isLineStatus,
   normalizeEmail,
   slugifyOrganizationName,
+  summarizeOrganizationUtilization,
   validateOrganizationName,
 } from "./business";
 
@@ -20,6 +22,9 @@ describe("business permissions", () => {
     expect(canViewBilling("billing")).toBe(true);
     expect(canViewBilling("manager")).toBe(false);
     expect(canManageLines("billing")).toBe(false);
+    expect(canManageRoles("owner")).toBe(true);
+    expect(canManageRoles("admin")).toBe(true);
+    expect(canManageRoles("manager")).toBe(false);
   });
 });
 
@@ -44,5 +49,24 @@ describe("business validation helpers", () => {
     expect(isInvitableRole("owner")).toBe(false);
     expect(isLineStatus("suspended")).toBe(true);
     expect(isLineStatus("deleted")).toBe(false);
+  });
+
+  it("summarizes company line utilization", () => {
+    expect(
+      summarizeOrganizationUtilization([
+        { assigned_to: "employee-1", status: "active", data_mb: 1000, data_used_mb: 250 },
+        { assigned_to: null, status: "suspended", data_mb: 500, data_used_mb: 100 },
+        { assigned_to: "employee-2", status: "revoked", data_mb: null, data_used_mb: null },
+      ]),
+    ).toMatchObject({
+      totalLines: 3,
+      assignedLines: 2,
+      activeLines: 1,
+      suspendedLines: 1,
+      revokedLines: 1,
+      totalDataMb: 1500,
+      usedDataMb: 350,
+      utilizationPercent: (350 / 1500) * 100,
+    });
   });
 });

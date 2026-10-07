@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, LogOut, Mail, Plus, RefreshCw, ShieldCheck, UserPlus } from "lucide-react";
+import {
+  Building2,
+  LogOut,
+  Mail,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  UserMinus,
+  UserPlus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { packagesQuery, formatData, formatUsd } from "@/lib/packages";
@@ -14,6 +23,8 @@ import {
   getBusinessWorkspace,
   inviteOrganizationMember,
   placeBusinessOrder,
+  removeOrganizationMember,
+  updateOrganizationMember,
   updateOrganizationLineStatus,
 } from "@/services/business.server";
 import { topUpOrganizationLine } from "@/services/topup.server";
@@ -189,6 +200,31 @@ function AccountPage() {
     }
   }
 
+  async function updateMember(userId: string, role: string, status: string) {
+    try {
+      await updateOrganizationMember({
+        data: { organizationId: selectedOrganization!.id, userId, role, status },
+      });
+      setMessage("Team member updated.");
+      await loadWorkspace();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update team member.");
+    }
+  }
+
+  async function removeMember(userId: string) {
+    if (!window.confirm("Remove this member and unassign their eSIM lines?")) return;
+    try {
+      await removeOrganizationMember({
+        data: { organizationId: selectedOrganization!.id, userId },
+      });
+      setMessage("Team member removed and their lines were unassigned.");
+      await loadWorkspace();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to remove team member.");
+    }
+  }
+
   if (loading)
     return (
       <AccountShell>
@@ -280,6 +316,7 @@ function AccountPage() {
   const canManage = ["owner", "admin", "manager"].includes(role);
   const canTopUp = canViewBilling(role as "owner" | "admin" | "billing" | "manager" | "employee");
   const canBuy = canManage;
+  const canManageRoles = role === "owner" || role === "admin";
   return (
     <AccountShell>
       <div className="account-topbar">
@@ -362,7 +399,47 @@ function AccountPage() {
                 {workspace?.members.map((member) => (
                   <div className="account-row" key={member.user_id}>
                     <span>{member.email ?? `${member.user_id.slice(0, 8)}…`}</span>
-                    <b>{member.role}</b>
+                    {canManageRoles &&
+                    member.role !== "owner" &&
+                    member.user_id !== workspace.userId ? (
+                      <span className="account-row-actions">
+                        <select
+                          className="account-mini-select"
+                          value={member.role}
+                          onChange={(event) =>
+                            void updateMember(member.user_id, event.target.value, member.status)
+                          }
+                        >
+                          <option value="employee">Employee</option>
+                          <option value="manager">Manager</option>
+                          <option value="billing">Billing</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                        <select
+                          className="account-mini-select"
+                          value={member.status}
+                          onChange={(event) =>
+                            void updateMember(member.user_id, member.role, event.target.value)
+                          }
+                        >
+                          <option value="active">Active</option>
+                          <option value="suspended">Suspended</option>
+                        </select>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={`Remove ${member.email ?? "member"}`}
+                          onClick={() => void removeMember(member.user_id)}
+                        >
+                          <UserMinus />
+                        </Button>
+                      </span>
+                    ) : (
+                      <b>
+                        {member.role}
+                        {member.status === "suspended" ? " · suspended" : ""}
+                      </b>
+                    )}
                   </div>
                 ))}
               </div>
@@ -432,6 +509,44 @@ function AccountPage() {
               )}
             </section>
           </div>
+          {(canManage || canTopUp) && workspace?.utilization && (
+            <section className="account-card">
+              <div className="account-card-heading">
+                <h2>Company utilization</h2>
+                <span className="account-status">
+                  {workspace.utilization.utilizationPercent.toFixed(1)}% used
+                </span>
+              </div>
+              <div className="account-grid">
+                <p>
+                  <b>{workspace.utilization.totalLines}</b>
+                  <br />
+                  <span className="account-muted">Total lines</span>
+                </p>
+                <p>
+                  <b>{workspace.utilization.assignedLines}</b>
+                  <br />
+                  <span className="account-muted">Assigned</span>
+                </p>
+                <p>
+                  <b>
+                    {formatData(workspace.utilization.usedDataMb)} /{" "}
+                    {formatData(workspace.utilization.totalDataMb)}
+                  </b>
+                  <br />
+                  <span className="account-muted">Data used</span>
+                </p>
+                <p>
+                  <b>
+                    {workspace.utilization.activeLines} active ·{" "}
+                    {workspace.utilization.suspendedLines} suspended
+                  </b>
+                  <br />
+                  <span className="account-muted">Operational status</span>
+                </p>
+              </div>
+            </section>
+          )}
           <section className="account-card">
             <div className="account-card-heading">
               <h2>eSIM lines</h2>

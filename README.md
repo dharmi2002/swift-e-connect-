@@ -58,7 +58,7 @@ There are **two server-side entry points**:
 
 ## Business accounts and team eSIM management
 
-The `/account` workspace supports the company use case: one organization can buy a batch of eSIMs, invite employees, assign lines, and suspend or revoke a line without sharing a single login.
+The `/account` workspace supports the company use case: one organization can buy a batch of eSIMs, invite employees or additional admins, change member roles, suspend/remove members, assign lines, and suspend or revoke a line without sharing a single login.
 
 Registration verifies the owner phone number through Twilio Verify SMS before creating the Supabase email/password account. Twilio secrets are server-only. Create a Verify Service in Twilio, then set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_VERIFY_SERVICE_SID` in the deployment environment. Phone numbers must be entered in E.164 format, such as `+254700000000`.
 
@@ -96,12 +96,14 @@ The database enforces these boundaries with Supabase RLS and security-definer me
 3. Buy 1–100 copies of an active package. The supplier order is created as one batch.
 4. When the supplier webhook confirms profiles, every profile becomes an `esim_lines` row with QR/activation details.
 5. Assign each line to an active member. Managers can change status to active, suspended, or revoked.
+6. Owners and admins can promote/demote non-owner members, suspend them, or remove them. Removing a member automatically unassigns their lines.
+7. Owners, admins, and billing users can review organization-level utilization: assigned lines, active/suspended counts, and used versus allocated data.
 
 Invitations are stored as SHA-256 token hashes, expire after seven days, and can only be accepted by the invited email address. The server sends invitation email through Brevo; if delivery fails, the invitation remains auditable and the returned URL can be used for support recovery.
 
 ### Database rollout
 
-Apply all migrations in filename order, including `20261007000000_business_accounts.sql`, `20261008000000_payments_and_operations.sql`, and `20261009000000_line_visibility.sql`. Together they create organizations, members, invitations, eSIM lines, payment/order events, top-ups, and the related ownership/payment fields on `orders`; the final migration limits line, usage, top-up, and order visibility by role and assignment.
+Apply all migrations in filename order, including `20261007000000_business_accounts.sql`, `20261008000000_payments_and_operations.sql`, `20261009000000_line_visibility.sql`, and `20261010000000_business_member_admin_controls.sql`. Together they create organizations, members, invitations, eSIM lines, payment/order events, top-ups, and the related ownership/payment fields on `orders`; the final migrations limit line, usage, top-up, order, and privileged member-management writes by role and assignment.
 
 The business ordering and top-up paths initialize Paystack checkout and only call the supplier after payment verification. Live provider credentials and staging verification remain required before production activation.
 
@@ -569,13 +571,14 @@ Set all environment variables in Cloudflare dashboard → Workers → Settings �
 Use this checklist for the final team review. Items requiring provider credentials are intentionally marked as live checks rather than claimed as complete by local tests.
 
 - [ ] Apply all migrations through `20261009000000_line_visibility.sql` in staging.
+- [ ] Apply `20261010000000_business_member_admin_controls.sql` after the line-visibility migration.
 - [ ] Confirm Supabase Auth email confirmation and redirect URLs for `/account`.
 - [ ] Add Twilio Verify service and test SMS delivery, resend limits, and trial-account restrictions.
 - [ ] Add Paystack test secret, set the `/payment` callback URL, complete a test card/mobile-money payment, and confirm the exact-amount guard.
 - [ ] Confirm Paystack webhook configuration and replay a successful and failed event.
 - [ ] Configure eSIMAccess webhook signature and replay order, status, usage, and validity events.
 - [ ] Confirm Brevo delivery for customer QR email, invitations, and low-balance alerts.
-- [ ] Test owner/admin/manager/billing/employee permissions with separate accounts.
+- [ ] Test owner/admin/manager/billing/employee permissions with separate accounts, including role changes and member removal.
 - [ ] Test bulk purchase, line assignment, suspension, revocation, and top-up in staging.
 - [ ] Set `CRON_SECRET`; verify package sync, balance alerts, and stuck-order polling.
 - [ ] Add production monitoring, backups, rate-limit/WAF rules, privacy policy, terms, refund policy, and support escalation.

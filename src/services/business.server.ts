@@ -7,11 +7,13 @@ import { createPaystackCheckout } from "./payment.server";
 import { sendOrganizationInvitationEmail } from "./email";
 import {
   canManageLines,
+  canManageRoles,
   canManageTeam,
   isInvitableRole,
   isLineStatus,
   normalizeEmail,
   slugifyOrganizationName,
+  summarizeOrganizationUtilization,
   validateOrganizationName,
   type BusinessRole,
 } from "@/lib/business";
@@ -92,6 +94,7 @@ export const getBusinessWorkspace = createServerFn({ method: "GET" })
         return { ...member, email: userData.user?.email ?? null };
       }),
     );
+    const visibleLines = lines ?? [];
     return {
       userId: auth.userId,
       organizations: (organizations ?? []).map((org) => ({
@@ -99,8 +102,9 @@ export const getBusinessWorkspace = createServerFn({ method: "GET" })
         role: memberships?.find((m) => m.organization_id === org.id)?.role,
       })),
       members: membersWithEmail,
-      lines: lines ?? [],
+      lines: visibleLines,
       orders: orders ?? [],
+      utilization: summarizeOrganizationUtilization(visibleLines),
     };
   });
 
@@ -138,8 +142,10 @@ export const inviteOrganizationMember = createServerFn({ method: "POST" })
   .validator((input: { organizationId: string; email: string; role: string }) => input)
   .handler(async ({ data, context }) => {
     const auth = context as unknown as AuthContext;
-    await requireRole(auth.userId, data.organizationId, canManageTeam);
+    const inviter = await requireRole(auth.userId, data.organizationId, canManageTeam);
     if (!isInvitableRole(data.role)) throw new Error("Unsupported invitation role.");
+    if (data.role === "admin" && !canManageRoles(inviter.role))
+      throw new Error("Only owners and admins can invite another admin.");
     const email = normalizeEmail(data.email);
     if (!email.includes("@")) throw new Error("Enter a valid email address.");
     const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
@@ -169,6 +175,65 @@ export const inviteOrganizationMember = createServerFn({ method: "POST" })
       console.error("Invitation email failed after invitation was stored:", cause);
     }
     return { inviteUrl };
+  });
+
+export const updateOrganizationMember = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (input: { organizationId: string; userId: string; role: string; status: string }) => input,
+  )
+  .handler(async ({ data, context }) => {
+    const auth = context as unknown as AuthContext;
+    await requireRole(auth.userId, data.organizationId, canManageRoles);
+    if (!isInvitableRole(data.role)) throw new Error("Unsupported member role.");
+    if (data.status !== "active" && data.status !== "suspended")
+      throw new Error("Unsupported member status.");
+    if (data.userId === auth.userId) throw new Error("You cannot change your own membership here.");
+    const { data: target } = await supabaseAdmin
+      .from("organization_members")
+      .select("role")
+      .eq("organization_id", data.organizationId)
+      .eq("user_id", data.userId)
+      .maybeSingle();
+    if (!target) throw new Error("Organization member not found.");
+    if (target.role === "owner") throw new Error("The organization owner cannot be changed here.");
+    const { error } = await supabaseAdmin
+      .from("organization_members")
+      .update({ role: data.role, status: data.status })
+      .eq("organization_id", data.organizationId)
+      .eq("user_id", data.userId);
+    if (error) throw new Error("Unable to update organization member.");
+    return { ok: true };
+  });
+
+export const removeOrganizationMember = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: { organizationId: string; userId: string }) => input)
+  .handler(async ({ data, context }) => {
+    const auth = context as unknown as AuthContext;
+    await requireRole(auth.userId, data.organizationId, canManageRoles);
+    if (data.userId === auth.userId)
+      throw new Error("You cannot remove yourself from this organization.");
+    const { data: target } = await supabaseAdmin
+      .from("organization_members")
+      .select("role")
+      .eq("organization_id", data.organizationId)
+      .eq("user_id", data.userId)
+      .maybeSingle();
+    if (!target) throw new Error("Organization member not found.");
+    if (target.role === "owner") throw new Error("The organization owner cannot be removed.");
+    const { error } = await supabaseAdmin
+      .from("organization_members")
+      .delete()
+      .eq("organization_id", data.organizationId)
+      .eq("user_id", data.userId);
+    if (error) throw new Error("Unable to remove organization member.");
+    await supabaseAdmin
+      .from("esim_lines")
+      .update({ assigned_to: null, status: "unassigned" })
+      .eq("organization_id", data.organizationId)
+      .eq("assigned_to", data.userId);
+    return { ok: true };
   });
 
 export const acceptOrganizationInvitation = createServerFn({ method: "POST" })
