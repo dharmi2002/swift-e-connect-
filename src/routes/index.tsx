@@ -45,6 +45,7 @@ import { PackageCard } from "@/components/store/PackageCard";
 import { CheckoutSheet } from "@/components/store/CheckoutSheet";
 import { EsimReadyDialog, type EsimResult } from "@/components/store/EsimReadyDialog";
 import { CompatibilityDialog } from "@/components/store/CompatibilityDialog";
+import { SalesChat } from "@/components/support/SalesChat";
 import { filterPackages, packagesQuery, type Package } from "@/lib/packages";
 
 export const Route = createFileRoute("/")({
@@ -180,7 +181,7 @@ function Home() {
               value={statValue(catalogStats.regionalPlans)}
               label="regional plans"
             />
-            <TrustStat icon={<Headphones />} value="0" label="contracts required" />
+            <TrustStat icon={<Headphones />} value="24/7" label="AI support chat" />
           </div>
           <div className="network-strip">
             <span>Vodacom</span>
@@ -498,7 +499,7 @@ function Home() {
           </div>
           <div id="support" className="support-card">
             <p className="eyebrow">SUPPORT</p>
-            <h3>Need help? Start with our installation and coverage guides.</h3>
+            <h3>Need help? Our AI support chat is available 24/7.</h3>
             <a href="#support">
               <MessageSquare /> Chat with support <ArrowRight />
             </a>
@@ -592,6 +593,7 @@ function Home() {
         onComplete={setEsim}
       />
       <EsimReadyDialog esim={esim} onOpenChange={(open) => !open && setEsim(null)} />
+      <SalesChat />
     </div>
   );
 }
