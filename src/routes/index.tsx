@@ -71,6 +71,15 @@ function Home() {
   const [bundleIndex, setBundleIndex] = useState(0);
   const [newsletterSubmitted, setNewsletterSubmitted] = useState(false);
   const filtered = useMemo(() => filterPackages(data ?? [], search), [data, search]);
+  const catalogStats = useMemo(() => {
+    const packages = data ?? [];
+    return {
+      plans: packages.length,
+      locations: new Set(packages.map((pkg) => pkg.location_code)).size,
+      regionalPlans: packages.filter((pkg) => pkg.region_type !== "country").length,
+    };
+  }, [data]);
+  const statValue = (value: number) => (isLoading ? "—" : String(value));
   const bundles = [
     {
       name: "East Africa Explorer",
@@ -160,10 +169,18 @@ function Home() {
         </section>
         <section className="trust-section page-shell">
           <div className="stats-grid">
-            <TrustStat icon={<Zap />} value="30 sec" label="average delivery time" />
-            <TrustStat icon={<Globe2 />} value="190+" label="destinations covered" />
-            <TrustStat icon={<ShieldCheck />} value="4.8 / 5" label="from 2,400 travellers" />
-            <TrustStat icon={<Headphones />} value="24 / 7" label="human support" />
+            <TrustStat icon={<Zap />} value={statValue(catalogStats.plans)} label="active plans" />
+            <TrustStat
+              icon={<Globe2 />}
+              value={statValue(catalogStats.locations)}
+              label="catalog locations"
+            />
+            <TrustStat
+              icon={<ShieldCheck />}
+              value={statValue(catalogStats.regionalPlans)}
+              label="regional plans"
+            />
+            <TrustStat icon={<Headphones />} value="0" label="contracts required" />
           </div>
           <div className="network-strip">
             <span>Vodacom</span>
