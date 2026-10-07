@@ -66,6 +66,8 @@ Registration verifies the owner phone number through Twilio Verify SMS before cr
 
 Paystack is the secure payment adapter. The server initializes a transaction, redirects the customer to Paystack, then verifies the returned reference and exact amount before calling eSIMAccess. The browser callback is never trusted as proof of payment. Set `PAYSTACK_SECRET_KEY`, `PAYSTACK_CURRENCY`, and `PAYSTACK_CALLBACK_URL`; use the test key first. Set both `PAYMENT_PROVIDER=paystack` and `VITE_PAYMENT_PROVIDER=paystack` for the controlled pilot. The original non-Paystack checkout path remains available only when both values are `legacy` for compatibility with existing deployments.
 
+Unknown AI-chat questions escalate to `VITE_SUPPORT_PHONE` through a `tel:` link. Configure the real E.164 support number before launch; if it is absent, the chat safely directs customers to `hello@elango.africa` instead of displaying a fabricated number.
+
 Stripe compatibility is retained for existing deployments: set `PAYMENT_PROVIDER=legacy`, configure `STRIPE_SECRET_KEY` and `VITE_STRIPE_PUBLISHABLE_KEY`, and use the Stripe card form. Stripe PaymentIntents are re-verified server-side for status, package metadata, amount, and currency before supplier fulfillment.
 
 ### Operations now covered
