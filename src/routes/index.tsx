@@ -45,7 +45,7 @@ import { PackageCard } from "@/components/store/PackageCard";
 import { CheckoutSheet } from "@/components/store/CheckoutSheet";
 import { EsimReadyDialog, type EsimResult } from "@/components/store/EsimReadyDialog";
 import { CompatibilityDialog } from "@/components/store/CompatibilityDialog";
-import { packagesQuery, type Package } from "@/lib/packages";
+import { filterPackages, packagesQuery, type Package } from "@/lib/packages";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -70,13 +70,7 @@ function Home() {
   const [esim, setEsim] = useState<EsimResult | null>(null);
   const [bundleIndex, setBundleIndex] = useState(0);
   const [newsletterSubmitted, setNewsletterSubmitted] = useState(false);
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return data ?? [];
-    return (data ?? []).filter((pkg) =>
-      `${pkg.location_name} ${pkg.name} ${pkg.location_code}`.toLowerCase().includes(query),
-    );
-  }, [data, search]);
+  const filtered = useMemo(() => filterPackages(data ?? [], search), [data, search]);
   const bundles = [
     {
       name: "East Africa Explorer",

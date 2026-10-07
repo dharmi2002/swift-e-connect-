@@ -34,6 +34,16 @@ export const packagesQuery = queryOptions({
   },
 });
 
+/** Return the complete catalog when the destination search is empty. */
+export function filterPackages(packages: Package[], search: string) {
+  const query = search.trim().toLowerCase();
+  if (!query) return packages;
+
+  return packages.filter((pkg) =>
+    `${pkg.location_name} ${pkg.name} ${pkg.location_code}`.toLowerCase().includes(query),
+  );
+}
+
 export function formatData(mb: number) {
   if (mb >= 20480) return `${Math.round(mb / 1024)} GB`;
   return mb >= 1024 ? `${Math.round(mb / 1024)} GB` : `${mb} MB`;
