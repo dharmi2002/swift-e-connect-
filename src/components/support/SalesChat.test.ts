@@ -10,6 +10,13 @@ describe("getSalesChatReply", () => {
     expect(getSalesChatReply("I need 20 eSIMs for employees")).toContain("business account");
   });
 
+  it("answers direct eSIM compatibility questions", () => {
+    const reply = getSalesChatReply("How do I know if my phone can take eSIM?");
+    expect(reply).toContain("carrier-unlocked");
+    expect(reply).toContain("EID");
+    expect(reply).toContain("Check device");
+  });
+
   it("does not collect sensitive payment or account secrets", () => {
     expect(getSalesChatReply("What is my OTP and card number?")).toContain("cannot collect");
   });

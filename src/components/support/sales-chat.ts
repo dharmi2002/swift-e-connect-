@@ -7,8 +7,12 @@ export function getSalesChatReply(message: string) {
   if (/business|team|employee|company|bulk|multiple|many esim|share/.test(query)) {
     return "For a team, create a business account to buy multiple eSIMs, invite employees, assign lines, monitor usage, suspend access, and top up eligible lines. Open Business account to get started.";
   }
-  if (/device|iphone|ipad|android|compatible|install|qr|scan/.test(query)) {
-    return "eLango delivers a QR code and activation details by email. Use Check device before buying, then follow the iOS or Android installation guide after payment.";
+  if (
+    /device|iphone|ipad|android|compatible|install|qr|scan|esim|e-sim|take esim|supports esim|phone can/.test(
+      query,
+    )
+  ) {
+    return "Check three things: your phone model must support eSIM, it must be carrier-unlocked, and its regional variant must allow eSIM. On iPhone, look for Settings > Cellular/Mobile Service > Add eSIM. On Android, look under Settings > Connections or Network & internet > SIMs for Add eSIM. You can also dial *#06# and look for an EID. Use Check device before buying; after purchase, scan the QR code we email you.";
   }
   if (
     /kenya|nigeria|south africa|ghana|egypt|morocco|uae|dubai|africa|east africa|west africa/.test(
