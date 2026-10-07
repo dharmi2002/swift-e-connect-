@@ -22,6 +22,6 @@ describe("getSalesChatReply", () => {
   });
 
   it("discloses the AI role when the intent is unclear", () => {
-    expect(getSalesChatReply("hello")).toContain("AI sales assistant");
+    expect(getSalesChatReply("hello")).toContain("support phone number is not configured");
   });
 });

@@ -1,3 +1,11 @@
+export const supportPhone = (import.meta.env["VITE_SUPPORT_PHONE"] || "").trim();
+
+export function supportEscalationReply() {
+  if (supportPhone)
+    return `I’m not able to resolve that here. Please call eLango support at ${supportPhone}.`;
+  return "I’m not able to resolve that here. The support phone number is not configured yet; please email hello@elango.africa and the team will help you.";
+}
+
 export function getSalesChatReply(message: string) {
   const query = message.trim().toLowerCase();
   if (!query) return "Tell me where you are going and how long you need data for.";
@@ -25,7 +33,7 @@ export function getSalesChatReply(message: string) {
     return "Plans show the exact data allowance, validity, networks, USD price, and local price before checkout. Browse the African catalog and choose the smallest plan that fits your trip.";
   }
   if (/refund|cancel|human|agent|support|help|problem|issue/.test(query)) {
-    return "I can help choose a plan and explain the buying flow. I cannot inspect orders or issue refunds; use the account area or the contact channel listed in the support section for account-specific help.";
+    return supportEscalationReply();
   }
-  return "I’m the eLango AI sales assistant. Tell me your destination, trip length, data need, or whether you are buying for a team, and I’ll point you to the fastest next step.";
+  return `${supportEscalationReply()} I can still help you choose a plan if you share your destination and trip length.`;
 }

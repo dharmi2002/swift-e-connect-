@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Bot, MessageCircle, Send, X } from "lucide-react";
-import { getSalesChatReply } from "./sales-chat";
+import { getSalesChatReply, supportPhone } from "./sales-chat";
 
 type ChatMessage = { id: number; role: "assistant" | "user"; text: string };
 
@@ -8,6 +8,12 @@ const quickReplies = [
   { label: "Find an Africa plan", href: "#plans" },
   { label: "Check my device", href: "#device-check" },
   { label: "Business eSIMs", href: "/account" },
+  {
+    label: "Call support",
+    href: supportPhone
+      ? `tel:${supportPhone.replace(/[^+\d]/g, "")}`
+      : "mailto:hello@elango.africa",
+  },
 ];
 
 export function SalesChat() {
