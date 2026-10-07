@@ -97,7 +97,7 @@ function Home() {
     },
     {
       name: "Global Roamer",
-      countries: "90+ countries",
+      countries: "International coverage",
       price: "$42",
       data: "20 GB",
       color: "dark",
@@ -216,7 +216,7 @@ function Home() {
           </Tabs>
           <div className="center-link">
             <a href="#plans">
-              See all 190+ destinations <ArrowRight />
+              See all {isLoading ? "catalog" : catalogStats.locations} locations <ArrowRight />
             </a>
           </div>
         </section>
@@ -498,7 +498,7 @@ function Home() {
           </div>
           <div id="support" className="support-card">
             <p className="eyebrow">SUPPORT</p>
-            <h3>Need help? We answer 24/7, in your timezone.</h3>
+            <h3>Need help? Start with our installation and coverage guides.</h3>
             <a href="#support">
               <MessageSquare /> Chat with support <ArrowRight />
             </a>
@@ -509,7 +509,7 @@ function Home() {
               <Globe2 /> Check coverage <ArrowRight />
             </a>
             <div className="online-status">
-              <span /> Neema is online now <small>Average reply: under 3 minutes</small>
+              <span /> Support resources available <small>Contact details are listed below</small>
             </div>
           </div>
         </section>
@@ -518,9 +518,7 @@ function Home() {
             <div className="section-heading centered">
               <p className="eyebrow">TRAVELLERS</p>
               <h2>Landed, and already online</h2>
-              <div className="rating">
-                <Star /> <b>4.8 / 5</b> from 2,400 travellers
-              </div>
+              <p>Stories from travellers using regional and local data plans.</p>
             </div>
             <div className="testimonial-grid">
               <Testimonial
@@ -601,7 +599,7 @@ function Home() {
 function AnnouncementBar() {
   return (
     <div className="announcement">
-      <Zap /> Your eSIM lands in your inbox in about 30 seconds
+      <Zap /> Digital delivery after payment and provider confirmation
     </div>
   );
 }
@@ -812,8 +810,7 @@ function SiteFooter() {
             <span>eLango</span>
           </a>
           <p>
-            Stay connected wherever you go. Travel data for individuals and teams — working in 190+
-            destinations.
+            Stay connected wherever you go. African-first travel data for individuals and teams.
           </p>
           <div className="socials">
             <a
