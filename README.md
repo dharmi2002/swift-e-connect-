@@ -1,6 +1,6 @@
-# PassportSIM — eSIM Reseller Storefront
+# eLango — eSIM Reseller Storefront
 
-PassportSIM is a white-label eSIM reseller storefront powered by the **eSIMAccess Wholesale API**. Customers browse data packages, purchase an eSIM, and receive their QR code + activation details by email — all automated.
+eLango is an African-focused eSIM reseller storefront powered by the **eSIMAccess Wholesale API**. Customers browse country and regional data packages, purchase an eSIM, and receive their QR code and activation details by email. Companies can manage multiple employees and eSIM lines from one controlled workspace.
 
 **Stack:** TanStack Start (React 19 SSR) · Vite 8 · Nitro (Cloudflare Workers) · Supabase (PostgreSQL + Auth) · Brevo transactional email · Vitest
 
@@ -21,7 +21,7 @@ PassportSIM is a white-label eSIM reseller storefront powered by the **eSIMAcces
 11. [Development Setup](#development-setup)
 12. [Testing](#testing)
 13. [Deployment (Cloudflare Workers)](#deployment-cloudflare-workers)
-14. [What's Left to Build](#whats-left-to-build)
+14. [Production readiness and follow-ups](#production-readiness-and-follow-ups)
 15. [Build System Note](#build-system-note)
 
 ---
@@ -55,6 +55,40 @@ There are **two server-side entry points**:
 | `src/api-router.ts`            | Raw HTTP handler                | External callers — webhooks, cron endpoints |
 
 `src/server.ts` is the Nitro entry point. It intercepts `/api/*` requests and routes them to `api-router.ts` before handing everything else to TanStack Start's SSR renderer.
+
+### Implemented product capabilities
+
+- African-first catalog with country, regional, UAE, and global packages; live eSIMAccess synchronization with a local development fallback when provider credentials are absent.
+- Empty search behavior that shows the complete catalog instead of an empty result state.
+- Hosted Paystack checkout with server-side reference, currency, amount, and payment-state verification before supplier fulfillment.
+- Legacy Stripe compatibility for existing deployments, including server-side PaymentIntent verification.
+- Supabase email/password authentication with Twilio Verify SMS OTP during registration.
+- Business organizations with owners, multiple admins, billing users, managers, and employees.
+- Secure invitations using hashed, expiring tokens, invited-email matching, and Brevo delivery.
+- Bulk company purchases from 1–100 eSIMs, line assignment/reassignment, status control, top-ups, and supplier-confirmed provisioning.
+- Organization utilization reporting: total lines, assignment count, active/suspended/revoked counts, allocated data, used data, and utilization percentage.
+- Employee privacy boundaries: employees see only their assigned line and activation details; operational roles see the organization fleet according to RLS.
+- Governed sales chat with product/device guidance and escalation to configured human support by phone or email when it cannot answer safely. The current chat engine is deterministic and rule-based; it does not silently claim to use an external LLM.
+- Webhook idempotency, signed provider events, audit events, stuck-order recovery, balance alerts, and cron-driven catalog synchronization.
+
+### Architecture boundaries
+
+```text
+Public storefront → catalog/search/compatibility → hosted payment → eSIM delivery
+        │                         │
+        └── governed AI sales chat ──→ configured human support escalation
+
+Authenticated /account workspace
+  Supabase Auth + Twilio OTP
+        → organization_members / invitations
+        → bulk orders → esim_lines → employee assignment
+        → role-aware utilization, billing, status, and top-ups
+
+Provider boundary: Paystack · eSIMAccess · Twilio · Brevo
+Persistence boundary: Supabase PostgreSQL · Auth · RLS · audit/idempotency records
+```
+
+The browser never authorizes a payment or supplier fulfillment by itself. Server functions validate the authenticated user and organization role, and provider callbacks are verified before changing order or line state.
 
 ## Business accounts and team eSIM management
 
@@ -121,6 +155,10 @@ src/
 ├── services/
 │   ├── esimaccess.ts            # eSIMAccess API client (ALL endpoints)
 │   ├── order.server.ts          # createServerFn: placeOrder, getOrderStatus
+│   ├── business.server.ts       # organizations, invitations, roles, lines, bulk orders
+│   ├── topup.server.ts          # role-checked organization line top-ups
+│   ├── payment.server.ts        # Paystack + legacy Stripe payment adapters
+│   ├── twilio-verify.server.ts  # registration OTP and verified signup
 │   ├── workers.ts               # pollStuckOrders (cron fallback)
 │   ├── email.ts                 # Brevo transactional email
 │   └── webhook-verify.ts        # HMAC-SHA256 signature verification
@@ -133,6 +171,7 @@ src/
 │   └── types.ts                 # Generated database types
 │
 ├── lib/
+│   ├── business.ts              # roles, permissions, and utilization calculations
 │   ├── packages.ts              # formatData, formatUsd, formatLocal helpers
 │   ├── utils.ts                 # cn() (tailwind-merge)
 │   ├── error-capture.ts         # Captures SSR errors before h3 swallows them
@@ -145,12 +184,20 @@ src/
 │   ├── CompatibilityDialog.tsx   # eSIM compatibility checker
 │   └── EsimReadyDialog.tsx       # Post-purchase eSIM delivery display
 │
+├── components/support/
+│   ├── SalesChat.tsx              # AI sales assistant UI and escalation action
+│   └── sales-chat.ts              # governed deterministic sales responses
+│
 ├── routes/
 │   ├── __root.tsx                # Root layout, head tags, error boundary
+│   ├── account.tsx               # Business control center
+│   ├── payment.tsx               # Payment callback and verification
 │   └── index.tsx                 # Homepage / store
 │
 └── __tests__/                   # Test files (some also colocated as *.test.ts)
 ```
+
+The business schema is delivered by ordered Supabase migrations: business entities and roles, payment/operations events, line-visibility RLS, and privileged member-management RLS.
 
 ---
 
@@ -170,7 +217,7 @@ src/
    b. POSTs to /esim/query to fetch ICCID, QR code, smdpAddress
    c. Updates order → status = "completed"
    d. Sends delivery email via Brevo
-9. Frontend poll sees status = "completed" → shows EsimReadyDialog with QR code
+8. Frontend poll sees status = "completed" → shows EsimReadyDialog with QR code
 ```
 
 ### Webhook missed (fallback)
@@ -391,6 +438,19 @@ Key-value store for app configuration.
 | `low_balance_threshold` | `{ usd: number }`                                  | `{ usd: 100 }`                      | Balance alert threshold        |
 | `admin_email`           | string                                             | `"ops@passportsim.io"`              | Admin alert recipient          |
 
+### Business-account tables
+
+| Table | Purpose |
+| ----- | ------- |
+| `organizations` | Company identity and owner compatibility fields |
+| `organization_members` | One membership per user and organization, with owner/admin/billing/manager/employee roles and active/suspended status |
+| `organization_invitations` | Hashed, expiring invitations tied to an email address and invited role |
+| `esim_lines` | One provisioned or pending eSIM line, assignment, lifecycle status, usage, expiry, and activation details |
+| `esim_topups` | Organization line top-up requests and fulfillment state |
+| `order_events` / `esim_line_events` | Payment, fulfillment, status, usage, and validity audit history |
+
+Business access is enforced in two layers: authenticated server functions re-check organization membership before writes, and PostgreSQL RLS policies restrict direct client reads/writes. Employees can see only assigned line details; owners/admins/managers operate lines; owners/admins manage privileged roles; owners/admins/billing users see commercial and organization utilization data.
+
 ### `webhook_logs`
 
 | Column         | Type        | Description                 |
@@ -446,6 +506,7 @@ CRON_SECRET="a-random-secret-for-cron-calls"
 | `PUBLIC_APP_URL`                | For mail | Server | Canonical HTTPS origin used in invite links          |
 | `PAYMENT_PROVIDER`              | ✅ prod  | Server | `paystack` blocks unpaid legacy fulfillment          |
 | `VITE_PAYMENT_PROVIDER`         | ✅ prod  | Client | Use `paystack` to show only secure checkout          |
+| `VITE_SUPPORT_PHONE`            | For chat | Client | Real E.164 human-support number for escalation      |
 | `ESIM_ACCESS_API_KEY`           | ✅       | Server | eSIMAccess dashboard → API Keys                      |
 | `ESIM_ACCESS_BASE_URL`          | ❌       | Server | Defaults to `https://api.esimaccess.com/api/v1/open` |
 | `ESIM_ACCESS_WEBHOOK_SECRET`    | ❌       | Server | Enable signature verification on webhooks            |
@@ -514,15 +575,15 @@ npm run check:pilot     # tests, lint, and production build in one gate
 
 **Framework:** Vitest · **Config:** `vitest.config.ts`
 
-82 tests across these files:
+91 tests across 14 files:
 
 | File                                   | Tests | What it covers                                                          |
 | -------------------------------------- | ----- | ----------------------------------------------------------------------- |
 | `src/__tests__/api-router.test.ts`     | 12    | Paystack/webhook signatures and cron auth                               |
 | `src/__tests__/esimaccess.test.ts`     | 3     | eSIMAccess API error handling                                           |
 | `src/__tests__/webhook-verify.test.ts` | 5     | HMAC-SHA256 signature verification                                      |
-| `src/lib/business.test.ts`             | 6     | Organization roles and business workflows                               |
-| `src/lib/packages.test.ts`             | 17    | `formatData`, `formatUsd`, `formatLocal`, empty-search catalog behavior |
+| `src/lib/business.test.ts`             | 7     | Organization roles, permissions, and utilization calculations            |
+| `src/lib/packages.test.ts`             | 18    | `formatData`, `formatUsd`, `formatLocal`, empty-search catalog behavior   |
 | `src/lib/rate-limit.test.ts`           | 2     | OTP rate-limit behavior                                                 |
 | `src/lib/utils.test.ts`                | 5     | `cn()` class name merging                                               |
 | `src/services/esimaccess.test.ts`      | 18    | `priceToUsd`, `applyMarkup`, mocked API calls                           |
@@ -531,6 +592,7 @@ npm run check:pilot     # tests, lint, and production build in one gate
 | `src/services/twilio-verify.test.ts`   | 3     | Twilio Verify request and registration flow                             |
 | `src/services/webhook-verify.test.ts`  | 5     | HMAC-SHA256 signature verification                                      |
 | `src/services/webhook.test.ts`         | 6     | Webhook envelope structure and statuses                                 |
+| `src/components/support/SalesChat.test.ts` | 5  | Governed answers and support escalation                                 |
 
 ```bash
 npm test
@@ -583,13 +645,22 @@ Use this checklist for the final team review. Items requiring provider credentia
 - [ ] Set `CRON_SECRET`; verify package sync, balance alerts, and stuck-order polling.
 - [ ] Add production monitoring, backups, rate-limit/WAF rules, privacy policy, terms, refund policy, and support escalation.
 
-Local verification currently passes `82` automated tests, lint with zero errors, and a production build. It does not replace the live provider checks above.
+Local verification currently passes `91` automated tests, lint with zero errors, and a production build. Six existing Fast Refresh warnings remain non-blocking. This does not replace the live provider checks above.
 
 `npm audit --omit=dev` currently reports zero production vulnerabilities. The full audit still reports development/build-tool advisories from the pinned Nitro/Lovable toolchain; resolving those requires a major toolchain migration, so do not run `npm audit fix --force` without a compatibility review. Safe overrides are recorded in `package.json` for the production dependency paths.
 
-## What's Left to Build
+## Production readiness and follow-ups
 
-### 🟡 Nice-to-haves
+The requested company-account feature set is implemented. Remaining work is environment and operations validation rather than missing core workflows:
+
+### Required before production
+
+- Apply all Supabase migrations through `20261010000000_business_member_admin_controls.sql`.
+- Run multi-user staging UAT with separate owner, admin, manager, billing, and employee accounts.
+- Configure and test real Twilio, Paystack, eSIMAccess, Brevo, support-phone, and cron credentials.
+- Verify webhook signatures, replay/idempotency behavior, payment recovery, and provider failure paths.
+
+### Nice-to-haves
 
 - **Customer order history** — business order history is available through the authenticated workspace; add a public email lookup only if required by support policy
 - **Error reporting** — replace `console.error` in `error-reporting.ts` with Sentry/LogRocket
