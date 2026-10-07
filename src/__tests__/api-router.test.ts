@@ -23,6 +23,7 @@ function makeRequest(
 describe("handleApiRoute", () => {
   const origWebhookSecret = process.env["ESIM_ACCESS_WEBHOOK_SECRET"];
   const origCronSecret = process.env["CRON_SECRET"];
+  const origAllowUnsignedWebhook = process.env["ALLOW_UNSIGNED_ESIM_WEBHOOKS"];
 
   beforeEach(() => {
     process.env["ESIM_ACCESS_WEBHOOK_SECRET"] = TEST_SECRET;
@@ -32,6 +33,8 @@ describe("handleApiRoute", () => {
   afterEach(() => {
     process.env["ESIM_ACCESS_WEBHOOK_SECRET"] = origWebhookSecret;
     process.env["CRON_SECRET"] = origCronSecret;
+    if (origAllowUnsignedWebhook === undefined) delete process.env["ALLOW_UNSIGNED_ESIM_WEBHOOKS"];
+    else process.env["ALLOW_UNSIGNED_ESIM_WEBHOOKS"] = origAllowUnsignedWebhook;
   });
 
   it("returns null for non-API routes", async () => {
@@ -57,6 +60,16 @@ describe("handleApiRoute", () => {
     expect(res!.status).toBe(401);
   });
 
+  it("fails closed when webhook signing is not configured", async () => {
+    delete process.env["ESIM_ACCESS_WEBHOOK_SECRET"];
+    delete process.env["ALLOW_UNSIGNED_ESIM_WEBHOOKS"];
+    const req = makeRequest("POST", "/api/webhooks/esim-access", {
+      body: JSON.stringify({ notifyType: "CHECK_HEALTH", content: {} }),
+    });
+    const res = await handleApiRoute(req, new URL(req.url));
+    expect(res!.status).toBe(503);
+  });
+
   it("rejects webhook with invalid signature", async () => {
     const body = '{"eventType":"test","orderNo":"123"}';
     const req = makeRequest("POST", "/api/webhooks/esim-access", {
@@ -77,6 +90,17 @@ describe("handleApiRoute", () => {
     });
     const res = await handleApiRoute(req, new URL(req.url));
     expect(res).not.toBeNull();
+    expect(res!.status).toBe(400);
+  });
+
+  it("rejects webhook envelopes without a notify id", async () => {
+    const body = JSON.stringify({ notifyType: "CHECK_HEALTH", content: {} });
+    const sig = sign(body);
+    const req = makeRequest("POST", "/api/webhooks/esim-access", {
+      body,
+      headers: { "RT-Signature": sig },
+    });
+    const res = await handleApiRoute(req, new URL(req.url));
     expect(res!.status).toBe(400);
   });
 
@@ -101,5 +125,26 @@ describe("handleApiRoute", () => {
     const res = await handleApiRoute(req, new URL(req.url));
     expect(res).not.toBeNull();
     expect(res!.status).toBe(401);
+  });
+
+  it("fails closed when cron secret is missing", async () => {
+    delete process.env["CRON_SECRET"];
+    process.env["ALLOW_UNAUTHENTICATED_CRON"] = "false";
+    const req = makeRequest("GET", "/api/health/balance");
+    const res = await handleApiRoute(req, new URL(req.url));
+    expect(res!.status).toBe(401);
+    delete process.env["ALLOW_UNAUTHENTICATED_CRON"];
+  });
+
+  it("rejects Paystack webhooks without a valid signature", async () => {
+    process.env["PAYSTACK_SECRET_KEY"] = "paystack-test-secret";
+    const body = JSON.stringify({ event: "charge.success", data: { reference: "EL-123" } });
+    const req = makeRequest("POST", "/api/webhooks/paystack", {
+      body,
+      headers: { "x-paystack-signature": "bad" },
+    });
+    const res = await handleApiRoute(req, new URL(req.url));
+    expect(res!.status).toBe(401);
+    delete process.env["PAYSTACK_SECRET_KEY"];
   });
 });

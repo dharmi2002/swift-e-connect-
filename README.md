@@ -16,12 +16,13 @@ PassportSIM is a white-label eSIM reseller storefront powered by the **eSIMAcces
 6. [Cron / Background Workers](#cron--background-workers)
 7. [Email Delivery (Brevo)](#email-delivery-brevo)
 8. [Database Schema](#database-schema)
-9. [Environment Variables](#environment-variables)
-10. [Development Setup](#development-setup)
-11. [Testing](#testing)
-12. [Deployment (Cloudflare Workers)](#deployment-cloudflare-workers)
-13. [What's Left to Build](#whats-left-to-build)
-14. [Build System Note](#build-system-note)
+9. [Business accounts and team eSIM management](#business-accounts-and-team-esim-management)
+10. [Environment Variables](#environment-variables)
+11. [Development Setup](#development-setup)
+12. [Testing](#testing)
+13. [Deployment (Cloudflare Workers)](#deployment-cloudflare-workers)
+14. [What's Left to Build](#whats-left-to-build)
+15. [Build System Note](#build-system-note)
 
 ---
 
@@ -48,12 +49,57 @@ Browser ──▶ TanStack Start (SSR) ──▶ Nitro (Cloudflare Worker)
 
 There are **two server-side entry points**:
 
-| Path | Mechanism | Use |
-|------|-----------|-----|
-| `src/services/order.server.ts` | `createServerFn` (TanStack RPC) | Frontend calls — place order, poll status |
-| `src/api-router.ts` | Raw HTTP handler | External callers — webhooks, cron endpoints |
+| Path                           | Mechanism                       | Use                                         |
+| ------------------------------ | ------------------------------- | ------------------------------------------- |
+| `src/services/order.server.ts` | `createServerFn` (TanStack RPC) | Frontend calls — place order, poll status   |
+| `src/api-router.ts`            | Raw HTTP handler                | External callers — webhooks, cron endpoints |
 
 `src/server.ts` is the Nitro entry point. It intercepts `/api/*` requests and routes them to `api-router.ts` before handing everything else to TanStack Start's SSR renderer.
+
+## Business accounts and team eSIM management
+
+The `/account` workspace supports the company use case: one organization can buy a batch of eSIMs, invite employees, assign lines, and suspend or revoke a line without sharing a single login.
+
+Registration verifies the owner phone number through Twilio Verify SMS before creating the Supabase email/password account. Twilio secrets are server-only. Create a Verify Service in Twilio, then set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_VERIFY_SERVICE_SID` in the deployment environment. Phone numbers must be entered in E.164 format, such as `+254700000000`.
+
+### Payments and fulfillment safety
+
+Paystack is the secure payment adapter. The server initializes a transaction, redirects the customer to Paystack, then verifies the returned reference and exact amount before calling eSIMAccess. The browser callback is never trusted as proof of payment. Set `PAYSTACK_SECRET_KEY`, `PAYSTACK_CURRENCY`, and `PAYSTACK_CALLBACK_URL`; use the test key first. Set both `PAYMENT_PROVIDER=paystack` and `VITE_PAYMENT_PROVIDER=paystack` for the controlled pilot. The original non-Paystack checkout path remains available only when both values are `legacy` for compatibility with existing deployments.
+
+### Operations now covered
+
+- Paystack payment state, references, exact-amount verification, idempotent supplier fulfillment records, payment event history, and cron recovery for paid-but-unfulfilled orders/top-ups.
+- Supplier `ESIM_STATUS`, `DATA_USAGE`, and `VALIDITY_USAGE` webhooks update lines and append audit events.
+- Authorized managers and billing users can top up eligible organization lines from the business workspace. Top-ups use hosted Paystack checkout, exact-amount verification, and an atomic supplier-fulfillment claim so a callback and webhook cannot provision the same top-up twice.
+- OTP sending has a best-effort per-runtime guard; production must also use an edge/WAF or durable rate-limit policy because serverless instances do not share memory.
+
+### Roles
+
+| Role     | Team | Lines | Billing | Typical use                                        |
+| -------- | ---- | ----- | ------- | -------------------------------------------------- |
+| Owner    | Yes  | Yes   | Yes     | Organization creator and accountable administrator |
+| Admin    | Yes  | Yes   | Yes     | Full day-to-day operations                         |
+| Manager  | Yes  | Yes   | No      | Assigns and controls employee lines                |
+| Billing  | No   | No    | Yes     | Reviews commercial activity                        |
+| Employee | No   | No    | No      | Uses an assigned eSIM                              |
+
+The database enforces these boundaries with Supabase RLS and security-definer membership checks. The UI is only a convenience layer; server functions re-check the caller's membership before every write.
+
+### Company flow
+
+1. Open **Business account** and create an account with a work email.
+2. Create the organization and invite staff with the smallest suitable role.
+3. Buy 1–100 copies of an active package. The supplier order is created as one batch.
+4. When the supplier webhook confirms profiles, every profile becomes an `esim_lines` row with QR/activation details.
+5. Assign each line to an active member. Managers can change status to active, suspended, or revoked.
+
+Invitations are stored as SHA-256 token hashes, expire after seven days, and can only be accepted by the invited email address. The server sends invitation email through Brevo; if delivery fails, the invitation remains auditable and the returned URL can be used for support recovery.
+
+### Database rollout
+
+Apply all migrations in filename order, including `20261007000000_business_accounts.sql`, `20261008000000_payments_and_operations.sql`, and `20261009000000_line_visibility.sql`. Together they create organizations, members, invitations, eSIM lines, payment/order events, top-ups, and the related ownership/payment fields on `orders`; the final migration limits line, usage, top-up, and order visibility by role and assignment.
+
+The business ordering and top-up paths initialize Paystack checkout and only call the supplier after payment verification. Live provider credentials and staging verification remain required before production activation.
 
 ---
 
@@ -109,17 +155,11 @@ src/
 ```
 1. Customer selects package → opens CheckoutSheet
 2. CheckoutSheet collects: email, device type, payment method
-3. [PAYMENT STEP — NOT YET IMPLEMENTED]
-4. Frontend calls placeOrder() server function
-5. placeOrder():
-   a. Validates package exists & is active in Supabase
-   b. Generates transaction ID: PS-{timestamp}-{random}
-   c. POSTs to eSIMAccess /esim/order
-   d. Inserts order row with status = "processing"
-   e. Returns { orderId, status } to frontend
-6. Frontend polls getOrderStatus() every few seconds
-7. Meanwhile, eSIMAccess sends ORDER_STATUS webhook with orderStatus = "GOT_RESOURCE"
-8. Webhook handler:
+3. Frontend calls the server-side Paystack initializer and redirects to hosted checkout
+4. The `/payment` callback verifies the reference and exact amount, then creates the supplier order
+5. Frontend polls getOrderStatus() every few seconds
+6. Meanwhile, eSIMAccess sends ORDER_STATUS webhook with orderStatus = "GOT_RESOURCE"
+7. Webhook handler:
    a. Parses envelope, checks idempotency
    b. POSTs to /esim/query to fetch ICCID, QR code, smdpAddress
    c. Updates order → status = "completed"
@@ -147,27 +187,27 @@ src/
 
 ### Critical conventions
 
-| Convention | Detail |
-|-----------|--------|
-| **HTTP method** | ALL endpoints are **POST** (no GET) |
-| **Base URL** | `https://api.esimaccess.com/api/v1/open` (note the `/open` suffix) |
-| **Auth header** | `RT-AccessCode: <api-key>` |
-| **Response envelope** | `{ success: boolean, errorCode, errorMsg, obj: T }` |
-| **Prices** | Integer × 10,000. `10000` = $1.00 USD. Use `priceToUsd()` to convert. |
-| **Data volumes** | Bytes. Divide by `1024*1024` for MB. |
-| **Rate limit** | 8 requests/second |
+| Convention            | Detail                                                                |
+| --------------------- | --------------------------------------------------------------------- |
+| **HTTP method**       | ALL endpoints are **POST** (no GET)                                   |
+| **Base URL**          | `https://api.esimaccess.com/api/v1/open` (note the `/open` suffix)    |
+| **Auth header**       | `RT-AccessCode: <api-key>`                                            |
+| **Response envelope** | `{ success: boolean, errorCode, errorMsg, obj: T }`                   |
+| **Prices**            | Integer × 10,000. `10000` = $1.00 USD. Use `priceToUsd()` to convert. |
+| **Data volumes**      | Bytes. Divide by `1024*1024` for MB.                                  |
+| **Rate limit**        | 8 requests/second                                                     |
 
 ### Endpoints used
 
-| Function | Endpoint | Purpose |
-|----------|----------|---------|
-| `fetchPackages()` | `/package/list` | Full catalog. Returns `obj.packageList[]` |
-| `createOrder()` | `/esim/order` | Order an eSIM. Body: `{ transactionId, packageInfoList: [{ packageCode, count, price? }] }` |
-| `queryProfiles()` | `/esim/query` | Fetch ICCID/QR/smdpAddress after order. Body: `{ orderNo }`. Error `200010` = still allocating |
-| `topUpEsim()` | `/esim/topup` | Add data to existing eSIM. Body: `{ esimTranNo, packageCode, transactionId }` |
-| `checkBalance()` | `/balance/query` | Wallet balance. Returns USD (converted from ×10,000) |
-| `cancelProfile()` | `/esim/cancel` | Cancel unused profile. Refunds to wallet |
-| `setWebhook()` | `/webhook/save` | Register webhook URL. Body: `{ webhook: "https://..." }` |
+| Function          | Endpoint         | Purpose                                                                                        |
+| ----------------- | ---------------- | ---------------------------------------------------------------------------------------------- |
+| `fetchPackages()` | `/package/list`  | Full catalog. Returns `obj.packageList[]`                                                      |
+| `createOrder()`   | `/esim/order`    | Order an eSIM. Body: `{ transactionId, packageInfoList: [{ packageCode, count, price? }] }`    |
+| `queryProfiles()` | `/esim/query`    | Fetch ICCID/QR/smdpAddress after order. Body: `{ orderNo }`. Error `200010` = still allocating |
+| `topUpEsim()`     | `/esim/topup`    | Add data to existing eSIM. Body: `{ esimTranNo, packageCode, transactionId }`                  |
+| `checkBalance()`  | `/balance/query` | Wallet balance. Returns USD (converted from ×10,000)                                           |
+| `cancelProfile()` | `/esim/cancel`   | Cancel unused profile. Refunds to wallet                                                       |
+| `setWebhook()`    | `/webhook/save`  | Register webhook URL. Body: `{ webhook: "https://..." }`                                       |
 
 ### Package sync
 
@@ -200,14 +240,14 @@ Call it via `POST /api/packages/sync` (with cron auth).
 
 ### Notify types
 
-| Type | Action |
-|------|--------|
-| `CHECK_HEALTH` | Returns `{ ok: true }` immediately |
-| `ORDER_STATUS` | Processes order completion (see below) |
-| `ESIM_STATUS` | Logged only (future: lifecycle tracking) |
-| `DATA_USAGE` | Logged only (future: usage dashboards) |
-| `VALIDITY_USAGE` | Logged only |
-| `SMDP_EVENT` | Logged only |
+| Type             | Action                                   |
+| ---------------- | ---------------------------------------- |
+| `CHECK_HEALTH`   | Returns `{ ok: true }` immediately       |
+| `ORDER_STATUS`   | Processes order completion (see below)   |
+| `ESIM_STATUS`    | Updates line lifecycle status and audit events |
+| `DATA_USAGE`     | Updates used data shown in the business workspace |
+| `VALIDITY_USAGE` | Updates line expiry and audit events     |
+| `SMDP_EVENT`     | Logged only                              |
 
 ### ORDER_STATUS processing
 
@@ -221,7 +261,7 @@ When `orderStatus === "FAILED"`: set order status to `"failed"`.
 
 ### Signature verification
 
-Optional. If `ESIM_ACCESS_WEBHOOK_SECRET` is set, the handler verifies the `RT-Signature` header using HMAC-SHA256. The verification function is in `src/services/webhook-verify.ts`.
+Required for staging/production. The handler verifies the `RT-Signature` header using HMAC-SHA256. If the secret is missing, webhook requests fail closed with `503`; `ALLOW_UNSIGNED_ESIM_WEBHOOKS=true` is reserved for local provider connectivity testing. The verification function is in `src/services/webhook-verify.ts`.
 
 ### Idempotency
 
@@ -248,11 +288,11 @@ Test connectivity: https://esimaccess.com/webhook-test-form
 
 All cron endpoints require `Authorization: Bearer <CRON_SECRET>` (unless `CRON_SECRET` is unset).
 
-| Endpoint | Method | Frequency | Purpose |
-|----------|--------|-----------|---------|
-| `/api/packages/sync` | POST | Daily | Sync upstream catalog → `packages` table |
-| `/api/health/balance` | GET | Hourly | Check wallet balance, alert if below threshold |
-| `/api/orders/poll` | POST | Every 2–5 min | Complete stuck orders (webhook fallback) |
+| Endpoint              | Method | Frequency     | Purpose                                        |
+| --------------------- | ------ | ------------- | ---------------------------------------------- |
+| `/api/packages/sync`  | POST   | Daily         | Sync upstream catalog → `packages` table       |
+| `/api/health/balance` | GET    | Hourly        | Check wallet balance, alert if below threshold |
+| `/api/orders/poll`    | POST   | Every 2–5 min | Complete stuck orders (webhook fallback)       |
 
 ### Cloudflare Workers cron setup
 
@@ -294,65 +334,65 @@ Two email types:
 
 ### `orders`
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | uuid (PK) | Auto-generated |
-| `order_no` | text | eSIMAccess order number |
-| `transaction_id` | text | Our unique transaction ID (`PS-{ts}-{rand}`) |
-| `customer_email` | text | Buyer's email |
-| `package_code` | text | eSIMAccess package code |
-| `device_type` | text | "iphone" / "android" / "other" |
-| `payment_method` | text | Payment method used |
-| `amount_usd` | numeric | Retail price charged |
-| `status` | text | `processing` → `completed` / `failed` |
-| `esim_iccid` | text | ICCID (set on completion) |
-| `activation_code` | text | eSIM activation code |
-| `qr_code_url` | text | QR code image URL |
-| `smdp_address` | text | SM-DP+ server address |
-| `raw_webhook_payload` | jsonb | Full webhook payload for debugging |
-| `created_at` | timestamptz | Order creation time |
+| Column                | Type        | Description                                  |
+| --------------------- | ----------- | -------------------------------------------- |
+| `id`                  | uuid (PK)   | Auto-generated                               |
+| `order_no`            | text        | eSIMAccess order number                      |
+| `transaction_id`      | text        | Our unique transaction ID (`PS-{ts}-{rand}`) |
+| `customer_email`      | text        | Buyer's email                                |
+| `package_code`        | text        | eSIMAccess package code                      |
+| `device_type`         | text        | "iphone" / "android" / "other"               |
+| `payment_method`      | text        | Payment method used                          |
+| `amount_usd`          | numeric     | Retail price charged                         |
+| `status`              | text        | `processing` → `completed` / `failed`        |
+| `esim_iccid`          | text        | ICCID (set on completion)                    |
+| `activation_code`     | text        | eSIM activation code                         |
+| `qr_code_url`         | text        | QR code image URL                            |
+| `smdp_address`        | text        | SM-DP+ server address                        |
+| `raw_webhook_payload` | jsonb       | Full webhook payload for debugging           |
+| `created_at`          | timestamptz | Order creation time                          |
 
 ### `packages`
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | uuid (PK) | Auto-generated |
-| `code` | text (unique) | eSIMAccess package code (upsert key) |
-| `name` | text | Package slug / display name |
-| `location_code` | text | ISO country/region codes |
-| `location_name` | text | Human-readable location |
-| `data_mb` | integer | Data allowance in MB |
-| `validity_days` | integer | Package validity period |
-| `retail_price_usd` | numeric | Price after markup |
-| `networks` | text[] | Available network operators |
-| `flag_emoji` | text | Country flag (populated separately) |
-| `region_type` | text | `"country"` or `"regional"` |
-| `is_active` | boolean | Whether to show in storefront |
-| `is_popular` | boolean | Featured flag |
-| `local_currency` | text | Local currency code |
-| `local_price` | numeric | Price in local currency |
-| `created_at` | timestamptz | Row creation time |
+| Column             | Type          | Description                          |
+| ------------------ | ------------- | ------------------------------------ |
+| `id`               | uuid (PK)     | Auto-generated                       |
+| `code`             | text (unique) | eSIMAccess package code (upsert key) |
+| `name`             | text          | Package slug / display name          |
+| `location_code`    | text          | ISO country/region codes             |
+| `location_name`    | text          | Human-readable location              |
+| `data_mb`          | integer       | Data allowance in MB                 |
+| `validity_days`    | integer       | Package validity period              |
+| `retail_price_usd` | numeric       | Price after markup                   |
+| `networks`         | text[]        | Available network operators          |
+| `flag_emoji`       | text          | Country flag (populated separately)  |
+| `region_type`      | text          | `"country"` or `"regional"`          |
+| `is_active`        | boolean       | Whether to show in storefront        |
+| `is_popular`       | boolean       | Featured flag                        |
+| `local_currency`   | text          | Local currency code                  |
+| `local_price`      | numeric       | Price in local currency              |
+| `created_at`       | timestamptz   | Row creation time                    |
 
 ### `system_settings`
 
 Key-value store for app configuration.
 
-| Key | Value type | Default | Purpose |
-|-----|-----------|---------|---------|
-| `markup_rule` | `{ type: "PERCENTAGE" \| "FIXED", value: number }` | `{ type: "PERCENTAGE", value: 20 }` | Price markup on wholesale cost |
-| `low_balance_threshold` | `{ usd: number }` | `{ usd: 100 }` | Balance alert threshold |
-| `admin_email` | string | `"ops@passportsim.io"` | Admin alert recipient |
+| Key                     | Value type                                         | Default                             | Purpose                        |
+| ----------------------- | -------------------------------------------------- | ----------------------------------- | ------------------------------ |
+| `markup_rule`           | `{ type: "PERCENTAGE" \| "FIXED", value: number }` | `{ type: "PERCENTAGE", value: 20 }` | Price markup on wholesale cost |
+| `low_balance_threshold` | `{ usd: number }`                                  | `{ usd: 100 }`                      | Balance alert threshold        |
+| `admin_email`           | string                                             | `"ops@passportsim.io"`              | Admin alert recipient          |
 
 ### `webhook_logs`
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | uuid (PK) | Auto-generated |
-| `event_type` | text | `notifyType` from webhook |
-| `order_no` | text | `notifyId` or `orderNo` |
-| `signature` | text | `RT-Signature` header value |
-| `payload` | jsonb | Full webhook body |
-| `processed_at` | timestamptz | When processed |
+| Column         | Type        | Description                 |
+| -------------- | ----------- | --------------------------- |
+| `id`           | uuid (PK)   | Auto-generated              |
+| `event_type`   | text        | `notifyType` from webhook   |
+| `order_no`     | text        | `notifyId` or `orderNo`     |
+| `signature`    | text        | `RT-Signature` header value |
+| `payload`      | jsonb       | Full webhook body           |
+| `processed_at` | timestamptz | When processed              |
 
 ---
 
@@ -371,7 +411,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY="sb_publishable_..."           # client-side
 # eSIMAccess API
 ESIM_ACCESS_API_KEY="your-esimaccess-api-key"
 ESIM_ACCESS_BASE_URL="https://api.esimaccess.com/api/v1/open"
-ESIM_ACCESS_WEBHOOK_SECRET="your-webhook-signing-secret"      # optional
+ESIM_ACCESS_WEBHOOK_SECRET="your-webhook-signing-secret"      # required in staging/production
 
 # Brevo (transactional email)
 BREVO_API_KEY="xkeysib-..."
@@ -382,20 +422,30 @@ FROM_NAME="PassportSIM"
 CRON_SECRET="a-random-secret-for-cron-calls"
 ```
 
-| Variable | Required | Side | Notes |
-|----------|----------|------|-------|
-| `SUPABASE_URL` | ✅ | Server | Supabase project URL |
-| `SUPABASE_PUBLISHABLE_KEY` | ✅ | Server | aka "anon key" |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Server | Service role — bypasses RLS |
-| `VITE_SUPABASE_URL` | ✅ | Client | Same URL, exposed to browser via Vite |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅ | Client | Same anon key, exposed to browser |
-| `ESIM_ACCESS_API_KEY` | ✅ | Server | eSIMAccess dashboard → API Keys |
-| `ESIM_ACCESS_BASE_URL` | ❌ | Server | Defaults to `https://api.esimaccess.com/api/v1/open` |
-| `ESIM_ACCESS_WEBHOOK_SECRET` | ❌ | Server | Enable signature verification on webhooks |
-| `BREVO_API_KEY` | ✅ | Server | Brevo dashboard → SMTP & API → API Keys |
-| `FROM_EMAIL` | ❌ | Server | Defaults to `noreply@passportsim.io` |
-| `FROM_NAME` | ❌ | Server | Defaults to `PassportSIM` |
-| `CRON_SECRET` | ❌ | Server | If unset, cron endpoints are open (dev only!) |
+| Variable                        | Required | Side   | Notes                                                |
+| ------------------------------- | -------- | ------ | ---------------------------------------------------- |
+| `SUPABASE_URL`                  | ✅       | Server | Supabase project URL                                 |
+| `SUPABASE_PUBLISHABLE_KEY`      | ✅       | Server | aka "anon key"                                       |
+| `SUPABASE_SERVICE_ROLE_KEY`     | ✅       | Server | Service role — bypasses RLS                          |
+| `VITE_SUPABASE_URL`             | ✅       | Client | Same URL, exposed to browser via Vite                |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅       | Client | Same anon key, exposed to browser                    |
+| `TWILIO_ACCOUNT_SID`            | For OTP  | Server | Twilio Account SID                                   |
+| `TWILIO_AUTH_TOKEN`             | For OTP  | Server | Twilio API secret; never expose to the client        |
+| `TWILIO_VERIFY_SERVICE_SID`     | For OTP  | Server | Twilio Verify Service SID (`VA...`)                  |
+| `PAYSTACK_SECRET_KEY`            | For pay  | Server | Paystack secret key; never expose to the client     |
+| `PAYSTACK_CURRENCY`              | For pay  | Server | Three-letter currency, default `USD`               |
+| `PAYSTACK_CALLBACK_URL`          | For pay  | Server | Public `/payment` route                            |
+| `PUBLIC_APP_URL`                 | For mail | Server | Canonical HTTPS origin used in invite links       |
+| `PAYMENT_PROVIDER`               | ✅ prod  | Server | `paystack` blocks unpaid legacy fulfillment       |
+| `VITE_PAYMENT_PROVIDER`          | ✅ prod  | Client | Use `paystack` to show only secure checkout       |
+| `ESIM_ACCESS_API_KEY`           | ✅       | Server | eSIMAccess dashboard → API Keys                      |
+| `ESIM_ACCESS_BASE_URL`          | ❌       | Server | Defaults to `https://api.esimaccess.com/api/v1/open` |
+| `ESIM_ACCESS_WEBHOOK_SECRET`    | ❌       | Server | Enable signature verification on webhooks            |
+| `BREVO_API_KEY`                 | ✅       | Server | Brevo dashboard → SMTP & API → API Keys              |
+| `FROM_EMAIL`                    | ❌       | Server | Defaults to `noreply@passportsim.io`                 |
+| `FROM_NAME`                     | ❌       | Server | Defaults to `PassportSIM`                            |
+| `CRON_SECRET`                   | ✅ prod  | Server | Required for cron endpoints                         |
+| `ALLOW_UNAUTHENTICATED_CRON`    | Dev only | Server | Set `true` only for local development               |
 
 ---
 
@@ -403,7 +453,7 @@ CRON_SECRET="a-random-secret-for-cron-calls"
 
 ### Prerequisites
 
-- Node.js ≥ 18
+- Node.js ≥ 22.12 (required by the current TanStack Start, Supabase, and Wrangler toolchain)
 - npm
 
 ### Install & run
@@ -427,7 +477,7 @@ npm run build           # production build
 ```
 
 ```bash
-npm run preview         # preview production build locally
+npm run preview         # preview the Nitro production build locally
 ```
 
 ```bash
@@ -446,21 +496,33 @@ npm test                # run all tests (Vitest)
 npm run test:watch      # watch mode
 ```
 
+```bash
+npm run check:pilot     # tests, lint, and production build in one gate
+```
+
 ---
 
 ## Testing
 
 **Framework:** Vitest · **Config:** `vitest.config.ts`
 
-65 tests across these files:
+82 tests across these files:
 
-| File | Tests | What it covers |
-|------|-------|---------------|
-| `src/services/esimaccess.test.ts` | 13 | `priceToUsd`, `applyMarkup`, mocked API calls |
-| `src/services/webhook.test.ts` | 6 | Webhook envelope structure, `GOT_RESOURCE` status |
-| `src/services/webhook-verify.test.ts` | 5 | HMAC-SHA256 signature verification |
-| `src/lib/packages.test.ts` | 11 | `formatData`, `formatUsd`, `formatLocal` |
-| `src/lib/utils.test.ts` | 5 | `cn()` class name merging |
+| File                                  | Tests | What it covers                                    |
+| ------------------------------------- | ----- | ------------------------------------------------- |
+| `src/__tests__/api-router.test.ts`    | 12    | Paystack/webhook signatures and cron auth         |
+| `src/__tests__/esimaccess.test.ts`    | 3     | eSIMAccess API error handling                     |
+| `src/__tests__/webhook-verify.test.ts`| 5     | HMAC-SHA256 signature verification                |
+| `src/lib/business.test.ts`            | 6     | Organization roles and business workflows        |
+| `src/lib/packages.test.ts`            | 15    | `formatData`, `formatUsd`, `formatLocal`         |
+| `src/lib/rate-limit.test.ts`          | 2     | OTP rate-limit behavior                           |
+| `src/lib/utils.test.ts`               | 5     | `cn()` class name merging                         |
+| `src/services/esimaccess.test.ts`     | 18    | `priceToUsd`, `applyMarkup`, mocked API calls    |
+| `src/services/email.test.ts`          | 1     | HTML escaping for provider-supplied email data   |
+| `src/services/payment.test.ts`        | 1     | Payment amount and fulfillment guards             |
+| `src/services/twilio-verify.test.ts`  | 3     | Twilio Verify request and registration flow       |
+| `src/services/webhook-verify.test.ts` | 5     | HMAC-SHA256 signature verification                |
+| `src/services/webhook.test.ts`        | 6     | Webhook envelope structure and statuses           |
 
 ```bash
 npm test
@@ -490,36 +552,40 @@ Set all environment variables in Cloudflare dashboard → Workers → Settings �
 
 1. Set environment variables in Cloudflare
 2. Register webhook URL: call `setWebhook("https://your-domain.com/api/webhooks/esim-access")`
-3. Set up cron triggers (see [Cron section](#cron--background-workers))
+3. Set up cron triggers (see [Cron section](#cron--background-workers)); this also retries paid records left incomplete by transient supplier failures
 4. Run initial package sync: `POST /api/packages/sync` with `Authorization: Bearer <CRON_SECRET>`
 5. Insert initial `system_settings` rows (markup_rule, low_balance_threshold, admin_email)
 
 ---
 
+## Team launch review checklist
+
+Use this checklist for the final team review. Items requiring provider credentials are intentionally marked as live checks rather than claimed as complete by local tests.
+
+- [ ] Apply all migrations through `20261009000000_line_visibility.sql` in staging.
+- [ ] Confirm Supabase Auth email confirmation and redirect URLs for `/account`.
+- [ ] Add Twilio Verify service and test SMS delivery, resend limits, and trial-account restrictions.
+- [ ] Add Paystack test secret, set the `/payment` callback URL, complete a test card/mobile-money payment, and confirm the exact-amount guard.
+- [ ] Confirm Paystack webhook configuration and replay a successful and failed event.
+- [ ] Configure eSIMAccess webhook signature and replay order, status, usage, and validity events.
+- [ ] Confirm Brevo delivery for customer QR email, invitations, and low-balance alerts.
+- [ ] Test owner/admin/manager/billing/employee permissions with separate accounts.
+- [ ] Test bulk purchase, line assignment, suspension, revocation, and top-up in staging.
+- [ ] Set `CRON_SECRET`; verify package sync, balance alerts, and stuck-order polling.
+- [ ] Add production monitoring, backups, rate-limit/WAF rules, privacy policy, terms, refund policy, and support escalation.
+
+Local verification currently passes `82` automated tests, lint with zero errors, and a production build. It does not replace the live provider checks above.
+
+`npm audit --omit=dev` currently reports zero production vulnerabilities. The full audit still reports development/build-tool advisories from the pinned Nitro/Lovable toolchain; resolving those requires a major toolchain migration, so do not run `npm audit fix --force` without a compatibility review. Safe overrides are recorded in `package.json` for the production dependency paths.
+
 ## What's Left to Build
-
-### 🔴 Payment Integration (critical)
-
-The checkout flow currently calls `placeOrder()` immediately — **no payment is collected**. You need to:
-
-1. **Choose a payment provider** (Stripe, Paystack, Flutterwave, etc.)
-2. **Create a payment intent/session** before calling `placeOrder()`
-3. **Verify payment** server-side before placing the eSIMAccess order
-4. **Handle payment failures** gracefully (don't place eSIM order if payment fails)
-5. **Store payment reference** in the `orders` table (the `payment_method` and `transaction_id` columns exist)
-
-The integration point is in `src/components/store/CheckoutSheet.tsx` — look for the order placement call.
 
 ### 🟡 Nice-to-haves
 
-- **Admin dashboard** — order management, analytics, system settings UI
-- **Order history** — customer-facing order lookup by email
-- **Top-up flow** — `topUpEsim()` is implemented in the API client but not exposed in UI
-- **Usage tracking** — process `DATA_USAGE` and `VALIDITY_USAGE` webhooks
+- **Customer order history** — business order history is available through the authenticated workspace; add a public email lookup only if required by support policy
 - **Error reporting** — replace `console.error` in `error-reporting.ts` with Sentry/LogRocket
-- **Rate limiting** — eSIMAccess allows 8 req/s; add client-side throttling
+- **Durable rate limiting** — connect the runtime guard to an edge/WAF or shared store before high-volume public launch
 - **Flag emoji** — populate `flag_emoji` in package sync (currently empty string)
-- **RLS policies** — Supabase Row Level Security for the orders table
 
 ---
 

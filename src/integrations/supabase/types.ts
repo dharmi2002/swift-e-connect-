@@ -10,70 +10,79 @@ export type Database = {
     Tables: {
       orders: {
         Row: {
-          activated_at: string | null;
           activation_code: string | null;
           amount_usd: number | null;
           created_at: string;
+          created_by_user_id: string | null;
           customer_email: string;
           device_type: string;
-          employee_id: string | null;
           esim_iccid: string | null;
           id: string;
-          order_no: string | null;
           organization_id: string | null;
+          order_no: string | null;
           package_code: string;
           payment_method: string;
           qr_code_url: string | null;
           raw_webhook_payload: Json | null;
-          recipient_email: string | null;
           smdp_address: string | null;
           status: string;
           transaction_id: string | null;
-          user_id: string | null;
+          quantity: number;
+          paid_at: string | null;
+          payment_metadata: Json;
+          payment_provider: string | null;
+          payment_reference: string | null;
+          payment_status: string;
         };
         Insert: {
-          activated_at?: string | null;
           activation_code?: string | null;
           amount_usd?: number | null;
           created_at?: string;
+          created_by_user_id?: string | null;
           customer_email: string;
           device_type?: string;
-          employee_id?: string | null;
           esim_iccid?: string | null;
           id?: string;
-          order_no?: string | null;
           organization_id?: string | null;
+          order_no?: string | null;
           package_code: string;
           payment_method?: string;
           qr_code_url?: string | null;
           raw_webhook_payload?: Json | null;
-          recipient_email?: string | null;
           smdp_address?: string | null;
           status?: string;
           transaction_id?: string | null;
-          user_id?: string | null;
+          quantity?: number;
+          paid_at?: string | null;
+          payment_metadata?: Json;
+          payment_provider?: string | null;
+          payment_reference?: string | null;
+          payment_status?: string;
         };
         Update: {
-          activated_at?: string | null;
           activation_code?: string | null;
           amount_usd?: number | null;
           created_at?: string;
+          created_by_user_id?: string | null;
           customer_email?: string;
           device_type?: string;
-          employee_id?: string | null;
           esim_iccid?: string | null;
           id?: string;
-          order_no?: string | null;
           organization_id?: string | null;
+          order_no?: string | null;
           package_code?: string;
           payment_method?: string;
           qr_code_url?: string | null;
           raw_webhook_payload?: Json | null;
-          recipient_email?: string | null;
           smdp_address?: string | null;
           status?: string;
           transaction_id?: string | null;
-          user_id?: string | null;
+          quantity?: number;
+          paid_at?: string | null;
+          payment_metadata?: Json;
+          payment_provider?: string | null;
+          payment_reference?: string | null;
+          payment_status?: string;
         };
         Relationships: [
           {
@@ -83,253 +92,244 @@ export type Database = {
             referencedRelation: "packages";
             referencedColumns: ["code"];
           },
-          {
-            foreignKeyName: "orders_organization_id_fkey";
-            columns: ["organization_id"];
-            isOneToOne: false;
-            referencedRelation: "organizations";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "orders_employee_id_fkey";
-            columns: ["employee_id"];
-            isOneToOne: false;
-            referencedRelation: "employees";
-            referencedColumns: ["id"];
-          },
         ];
       };
       organizations: {
-        Row: {
-          id: string;
-          name: string;
-          company_email: string;
-          owner_user_id: string;
-          created_at: string;
-        };
+        Row: { id: string; name: string; slug: string; created_by: string; created_at: string };
         Insert: {
           id?: string;
           name: string;
-          company_email: string;
-          owner_user_id: string;
+          slug: string;
+          created_by: string;
           created_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
-          company_email?: string;
-          owner_user_id?: string;
+          slug?: string;
+          created_by?: string;
           created_at?: string;
         };
         Relationships: [];
       };
-      offices: {
+      organization_members: {
         Row: {
-          id: string;
           organization_id: string;
-          name: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          organization_id: string;
-          name: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          organization_id?: string;
-          name?: string;
-          created_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "offices_organization_id_fkey";
-            columns: ["organization_id"];
-            isOneToOne: false;
-            referencedRelation: "organizations";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      employees: {
-        Row: {
-          id: string;
-          organization_id: string;
-          office_id: string | null;
-          full_name: string;
-          email: string;
-          phone: string | null;
-          is_active: boolean;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          organization_id: string;
-          office_id?: string | null;
-          full_name: string;
-          email: string;
-          phone?: string | null;
-          is_active?: boolean;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          organization_id?: string;
-          office_id?: string | null;
-          full_name?: string;
-          email?: string;
-          phone?: string | null;
-          is_active?: boolean;
-          created_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "employees_organization_id_fkey";
-            columns: ["organization_id"];
-            isOneToOne: false;
-            referencedRelation: "organizations";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "employees_office_id_fkey";
-            columns: ["office_id"];
-            isOneToOne: false;
-            referencedRelation: "offices";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      bulk_purchases: {
-        Row: {
-          id: string;
-          organization_id: string;
-          package_code: string;
-          quantity: number;
-          amount_usd_total: number;
-          stripe_payment_intent_id: string | null;
-          transaction_id: string | null;
+          user_id: string;
+          role: string;
           status: string;
           created_at: string;
         };
         Insert: {
+          organization_id: string;
+          user_id: string;
+          role?: string;
+          status?: string;
+          created_at?: string;
+        };
+        Update: {
+          organization_id?: string;
+          user_id?: string;
+          role?: string;
+          status?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      organization_invitations: {
+        Row: {
+          id: string;
+          organization_id: string;
+          email: string;
+          role: string;
+          token_hash: string;
+          invited_by: string;
+          expires_at: string;
+          accepted_at: string | null;
+          created_at: string;
+        };
+        Insert: {
           id?: string;
           organization_id: string;
-          package_code: string;
-          quantity: number;
-          amount_usd_total: number;
-          stripe_payment_intent_id?: string | null;
-          transaction_id?: string | null;
-          status?: string;
+          email: string;
+          role: string;
+          token_hash: string;
+          invited_by: string;
+          expires_at: string;
+          accepted_at?: string | null;
           created_at?: string;
         };
         Update: {
           id?: string;
           organization_id?: string;
-          package_code?: string;
-          quantity?: number;
-          amount_usd_total?: number;
-          stripe_payment_intent_id?: string | null;
-          transaction_id?: string | null;
-          status?: string;
+          email?: string;
+          role?: string;
+          token_hash?: string;
+          invited_by?: string;
+          expires_at?: string;
+          accepted_at?: string | null;
           created_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "bulk_purchases_organization_id_fkey";
-            columns: ["organization_id"];
-            isOneToOne: false;
-            referencedRelation: "organizations";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "bulk_purchases_package_code_fkey";
-            columns: ["package_code"];
-            isOneToOne: false;
-            referencedRelation: "packages";
-            referencedColumns: ["code"];
-          },
-        ];
+        Relationships: [];
       };
-      esim_seats: {
+      esim_lines: {
         Row: {
           id: string;
-          bulk_purchase_id: string;
           organization_id: string;
           order_id: string | null;
-          assigned_employee_id: string | null;
-          assigned_email: string | null;
+          assigned_to: string | null;
+          package_code: string;
+          label: string | null;
+          esim_tran_no: string;
+          iccid: string;
+          qr_code_url: string | null;
+          smdp_address: string | null;
+          activation_code: string | null;
           status: string;
+          data_mb: number | null;
+          validity_days: number | null;
+          data_used_mb: number;
+          expires_at: string | null;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
-          bulk_purchase_id: string;
           organization_id: string;
           order_id?: string | null;
-          assigned_employee_id?: string | null;
-          assigned_email?: string | null;
+          assigned_to?: string | null;
+          package_code: string;
+          label?: string | null;
+          esim_tran_no: string;
+          iccid: string;
+          qr_code_url?: string | null;
+          smdp_address?: string | null;
+          activation_code?: string | null;
           status?: string;
+          data_mb?: number | null;
+          validity_days?: number | null;
+          data_used_mb?: number;
+          expires_at?: string | null;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
-          bulk_purchase_id?: string;
           organization_id?: string;
           order_id?: string | null;
-          assigned_employee_id?: string | null;
-          assigned_email?: string | null;
+          assigned_to?: string | null;
+          package_code?: string;
+          label?: string | null;
+          esim_tran_no?: string;
+          iccid?: string;
+          qr_code_url?: string | null;
+          smdp_address?: string | null;
+          activation_code?: string | null;
           status?: string;
+          data_mb?: number | null;
+          validity_days?: number | null;
+          data_used_mb?: number;
+          expires_at?: string | null;
           created_at?: string;
+          updated_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "esim_seats_bulk_purchase_id_fkey";
-            columns: ["bulk_purchase_id"];
-            isOneToOne: false;
-            referencedRelation: "bulk_purchases";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "esim_seats_organization_id_fkey";
-            columns: ["organization_id"];
-            isOneToOne: false;
-            referencedRelation: "organizations";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "esim_seats_order_id_fkey";
-            columns: ["order_id"];
-            isOneToOne: false;
-            referencedRelation: "orders";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "esim_seats_assigned_employee_id_fkey";
-            columns: ["assigned_employee_id"];
-            isOneToOne: false;
-            referencedRelation: "employees";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: [];
       };
-      profiles: {
+      order_events: {
         Row: {
           id: string;
-          email: string;
-          full_name: string | null;
+          order_id: string;
+          event_type: string;
+          provider: string | null;
+          provider_reference: string | null;
+          payload: Json;
           created_at: string;
         };
         Insert: {
-          id: string;
-          email: string;
-          full_name?: string | null;
+          id?: string;
+          order_id: string;
+          event_type: string;
+          provider?: string | null;
+          provider_reference?: string | null;
+          payload?: Json;
           created_at?: string;
         };
         Update: {
           id?: string;
-          email?: string;
-          full_name?: string | null;
+          order_id?: string;
+          event_type?: string;
+          provider?: string | null;
+          provider_reference?: string | null;
+          payload?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      esim_line_events: {
+        Row: { id: string; line_id: string; event_type: string; payload: Json; created_at: string };
+        Insert: {
+          id?: string;
+          line_id: string;
+          event_type: string;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          line_id?: string;
+          event_type?: string;
+          payload?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      esim_topups: {
+        Row: {
+          id: string;
+          line_id: string;
+          package_code: string;
+          transaction_id: string;
+          amount_usd: number | null;
+          status: string;
+          payment_provider: string | null;
+          payment_status: string;
+          payment_reference: string | null;
+          paid_at: string | null;
+          payment_metadata: Json;
+          provider_payload: Json;
+          created_by_user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          line_id: string;
+          package_code: string;
+          transaction_id: string;
+          amount_usd?: number | null;
+          status?: string;
+          payment_provider?: string | null;
+          payment_status?: string;
+          payment_reference?: string | null;
+          paid_at?: string | null;
+          payment_metadata?: Json;
+          provider_payload?: Json;
+          created_by_user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          line_id?: string;
+          package_code?: string;
+          transaction_id?: string;
+          amount_usd?: number | null;
+          status?: string;
+          payment_provider?: string | null;
+          payment_status?: string;
+          payment_reference?: string | null;
+          paid_at?: string | null;
+          payment_metadata?: Json;
+          provider_payload?: Json;
+          created_by_user_id?: string;
           created_at?: string;
         };
         Relationships: [];

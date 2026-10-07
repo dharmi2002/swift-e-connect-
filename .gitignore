@@ -31,5 +31,3 @@ dist-ssr
 *.sln
 *.sw?
 .env
-.vercel
-*.pdf

@@ -15,24 +15,24 @@ export function PackageCard({
   const local = formatLocal(pkg);
 
   return (
-    <article className="flex flex-col rounded-2xl border bg-card p-5 shadow-card transition-shadow hover:shadow-lift">
+    <article className="flex min-h-[260px] flex-col rounded-3xl border bg-card p-5 shadow-card transition-all hover:-translate-y-1 hover:shadow-lift">
       <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-muted-foreground">
+          <p className="truncate text-sm font-bold text-foreground">
             <span className="mr-1">{pkg.flag_emoji}</span>
             {pkg.location_name}
           </p>
           <h3 className="truncate text-base font-bold">{pkg.name}</h3>
         </div>
         {pkg.is_popular && (
-          <Badge className="shrink-0 bg-gold text-gold-foreground hover:bg-gold">
+          <Badge className="shrink-0 rounded-full bg-accent text-accent-foreground hover:bg-accent">
             <Zap className="mr-1 h-3 w-3" /> Popular
           </Badge>
         )}
       </header>
 
       <div className="mt-4 flex items-end gap-2">
-        <span className="text-4xl font-extrabold leading-none tracking-tight">
+        <span className="text-3xl font-extrabold leading-none tracking-tight">
           {formatData(pkg.data_mb)}
         </span>
         <span className="pb-1 text-sm text-muted-foreground">of data</span>
@@ -61,8 +61,8 @@ export function PackageCard({
             {showLocal && local ? formatUsd(pkg.retail_price_usd) : (local ?? "USD")}
           </p>
         </div>
-        <Button variant="hero" className="shrink-0" onClick={() => onBuy(pkg)}>
-          Get eSIM
+        <Button variant="hero" className="shrink-0 rounded-xl font-bold" onClick={() => onBuy(pkg)}>
+          Buy eSIM <span aria-hidden="true">→</span>
         </Button>
       </div>
     </article>

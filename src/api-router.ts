@@ -11,6 +11,15 @@ import { verifySignature } from "./services/webhook-verify";
 import { syncPackages, checkBalance, queryProfiles } from "./services/esimaccess";
 import { sendEsimDeliveryEmail, sendAdminLowBalanceAlert } from "./services/email";
 import { pollStuckOrders } from "./services/workers";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import {
+  fulfillOrderById,
+  fulfillPaidTopup,
+  settlePaystackPayment,
+  settlePaystackTopup,
+} from "./services/payment.server";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
@@ -20,7 +29,7 @@ function json(data: unknown, status = 200): Response {
 
 function checkCronAuth(request: Request): boolean {
   const expected = process.env["CRON_SECRET"];
-  if (!expected) return true; // no secret configured = allow
+  if (!expected) return process.env["ALLOW_UNAUTHENTICATED_CRON"] === "true";
   return request.headers.get("Authorization") === `Bearer ${expected}`;
 }
 
@@ -36,6 +45,10 @@ export async function handleApiRoute(request: Request, url: URL): Promise<Respon
   // -----------------------------------------------------------------------
   if (pathname === "/api/webhooks/esim-access" && method === "POST") {
     return handleWebhook(request);
+  }
+
+  if (pathname === "/api/webhooks/paystack" && method === "POST") {
+    return handlePaystackWebhook(request);
   }
 
   // -----------------------------------------------------------------------
@@ -96,6 +109,62 @@ export async function handleApiRoute(request: Request, url: URL): Promise<Respon
   return null;
 }
 
+async function handlePaystackWebhook(request: Request): Promise<Response> {
+  const secret = process.env["PAYSTACK_SECRET_KEY"];
+  const signature = request.headers.get("x-paystack-signature") ?? "";
+  const rawBody = await request.text();
+  if (!secret || !signature) return new Response("Unauthorized", { status: 401 });
+  const expected = createHmac("sha512", secret).update(rawBody).digest("hex");
+  if (
+    expected.length !== signature.length ||
+    !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+  )
+    return new Response("Unauthorized", { status: 401 });
+  let payload: {
+    event?: string;
+    data?: { reference?: string; metadata?: { order_id?: string; topup_id?: string } };
+  };
+  try {
+    payload = JSON.parse(rawBody) as typeof payload;
+  } catch {
+    return new Response("Bad Request", { status: 400 });
+  }
+  if (payload.event !== "charge.success" || !payload.data?.reference) return json({ ok: true });
+  let orderId = payload.data.metadata?.order_id;
+  let topupId = payload.data.metadata?.topup_id;
+  if (!orderId && !topupId) {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ data: order }, { data: topup }] = await Promise.all([
+      supabaseAdmin
+        .from("orders")
+        .select("id")
+        .eq("payment_reference", payload.data.reference)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("esim_topups")
+        .select("id")
+        .eq("payment_reference", payload.data.reference)
+        .maybeSingle(),
+    ]);
+    orderId = order?.id;
+    topupId = topup?.id;
+  }
+  try {
+    if (topupId) {
+      await settlePaystackTopup(topupId, payload.data.reference);
+      await fulfillPaidTopup(topupId);
+      return json({ ok: true });
+    }
+    if (!orderId) return json({ ok: true });
+    await settlePaystackPayment(orderId, payload.data.reference);
+    await fulfillOrderById(orderId);
+    return json({ ok: true });
+  } catch (error) {
+    console.error("Paystack webhook processing failed:", error);
+    return json({ error: "Payment processing failed" }, 500);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Webhook handler
 // ---------------------------------------------------------------------------
@@ -133,8 +202,13 @@ interface OrderStatusContent {
 async function handleWebhook(request: Request): Promise<Response> {
   const rawBody = await request.text();
 
-  // Signature verification (optional — only if ESIM_ACCESS_WEBHOOK_SECRET is configured)
+  // Signature verification is mandatory in a pilot/production deployment. The
+  // explicit override exists only for local provider connectivity testing.
   const secret = process.env["ESIM_ACCESS_WEBHOOK_SECRET"];
+  const allowUnsigned = process.env["ALLOW_UNSIGNED_ESIM_WEBHOOKS"] === "true";
+  if (!secret && !allowUnsigned) {
+    return json({ error: "Webhook signature verification is not configured." }, 503);
+  }
   if (secret) {
     const signature = request.headers.get("RT-Signature") ?? "";
     if (!signature || !verifySignature(rawBody, signature)) {
@@ -150,7 +224,14 @@ async function handleWebhook(request: Request): Promise<Response> {
   }
 
   const { notifyType, notifyId, content } = envelope;
-  if (!notifyType || !content) {
+  if (
+    typeof notifyType !== "string" ||
+    !notifyType ||
+    typeof notifyId !== "string" ||
+    !notifyId ||
+    !content ||
+    typeof content !== "object"
+  ) {
     return new Response("Missing notifyType or content", { status: 400 });
   }
 
@@ -172,30 +253,110 @@ async function handleWebhook(request: Request): Promise<Response> {
 
   if (existing) return json({ ok: true });
 
-  await supabaseAdmin.from("webhook_logs").insert({
+  const { error: webhookLogError } = await supabaseAdmin.from("webhook_logs").insert({
     event_type: notifyType,
-    order_no: orderNo ?? notifyId,
+    order_no: notifyId,
     signature: request.headers.get("RT-Signature") ?? "",
     payload: JSON.parse(rawBody),
   });
+  if (webhookLogError) {
+    // A concurrent delivery may win the unique idempotency key; that is safe.
+    if (webhookLogError.code === "23505") return json({ ok: true });
+    console.error("Unable to record webhook idempotency log:", webhookLogError);
+    return json({ error: "Webhook could not be recorded" }, 500);
+  }
 
   try {
     if (notifyType === "ORDER_STATUS") {
       await handleOrderStatus(content as unknown as OrderStatusContent, rawBody, supabaseAdmin);
+    } else if (notifyType === "ESIM_STATUS") {
+      await handleEsimStatus(content, rawBody, supabaseAdmin);
+    } else if (notifyType === "DATA_USAGE") {
+      await handleDataUsage(content, rawBody, supabaseAdmin);
+    } else if (notifyType === "VALIDITY_USAGE") {
+      await handleValidityUsage(content, rawBody, supabaseAdmin);
     }
-    // ESIM_STATUS, DATA_USAGE, VALIDITY_USAGE, SMDP_EVENT: log only for now
-    // Future: update eSIM lifecycle status, usage dashboards, etc.
   } catch (err) {
     console.error(`Webhook processing error (${notifyType}):`, err);
+    await supabaseAdmin
+      .from("webhook_logs")
+      .delete()
+      .eq("event_type", notifyType)
+      .eq("order_no", notifyId);
+    return json({ error: "Webhook processing failed" }, 500);
   }
 
   return json({ ok: true });
 }
 
+async function recordLineEvent(
+  supabaseAdmin: any,
+  iccid: string,
+  eventType: string,
+  payload: Record<string, unknown>,
+) {
+  const { data: line } = await supabaseAdmin
+    .from("esim_lines")
+    .select("id")
+    .eq("iccid", iccid)
+    .maybeSingle();
+  if (!line) return;
+  await supabaseAdmin
+    .from("esim_line_events")
+    .insert({ line_id: line.id, event_type: eventType, payload });
+  return line.id as string;
+}
+
+async function handleEsimStatus(
+  content: Record<string, unknown>,
+  rawBody: string,
+  supabaseAdmin: any,
+) {
+  const iccid = typeof content.iccid === "string" ? content.iccid : "";
+  if (!iccid) return;
+  const upstreamStatus = String(content.esimStatus ?? content.smdpStatus ?? "").toUpperCase();
+  const status = upstreamStatus.includes("SUSPEND")
+    ? "suspended"
+    : upstreamStatus.includes("CANCEL") || upstreamStatus.includes("REVOK")
+      ? "revoked"
+      : upstreamStatus.includes("ACTIV") || upstreamStatus.includes("RELEASE")
+        ? "active"
+        : null;
+  if (status) await supabaseAdmin.from("esim_lines").update({ status }).eq("iccid", iccid);
+  await recordLineEvent(supabaseAdmin, iccid, "esim_status", { ...content, raw: rawBody });
+}
+
+async function handleDataUsage(
+  content: Record<string, unknown>,
+  rawBody: string,
+  supabaseAdmin: any,
+) {
+  const iccid = typeof content.iccid === "string" ? content.iccid : "";
+  const usage = Number(content.orderUsage ?? content.usedVolume ?? content.dataUsage ?? 0);
+  if (!iccid || !Number.isFinite(usage)) return;
+  await supabaseAdmin
+    .from("esim_lines")
+    .update({ data_used_mb: Math.max(0, usage / (1024 * 1024)) })
+    .eq("iccid", iccid);
+  await recordLineEvent(supabaseAdmin, iccid, "data_usage", { ...content, raw: rawBody });
+}
+
+async function handleValidityUsage(
+  content: Record<string, unknown>,
+  rawBody: string,
+  supabaseAdmin: any,
+) {
+  const iccid = typeof content.iccid === "string" ? content.iccid : "";
+  const expiry = content.expiredTime ?? content.expiryTime ?? content.expireTime;
+  if (!iccid || typeof expiry !== "string") return;
+  await supabaseAdmin.from("esim_lines").update({ expires_at: expiry }).eq("iccid", iccid);
+  await recordLineEvent(supabaseAdmin, iccid, "validity_usage", { ...content, raw: rawBody });
+}
+
 async function handleOrderStatus(
   content: OrderStatusContent,
   rawBody: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   supabaseAdmin: any,
 ): Promise<void> {
   const { orderNo, orderStatus } = content;
@@ -209,21 +370,19 @@ async function handleOrderStatus(
       return;
     }
 
-    const esim = profiles[0]!;
-
     const { data: order } = await supabaseAdmin
       .from("orders")
       .update({
         status: "completed",
-        esim_iccid: esim.iccid,
-        activation_code: esim.ac,
-        qr_code_url: esim.qrCodeUrl,
-        smdp_address: esim.smdpAddress,
-        activated_at: new Date().toISOString(),
+        esim_iccid: profiles[0]!.iccid,
+        activation_code: profiles[0]!.ac,
+        qr_code_url: profiles[0]!.qrCodeUrl,
+        smdp_address: profiles[0]!.smdpAddress,
+
         raw_webhook_payload: JSON.parse(rawBody),
       })
       .eq("order_no", orderNo)
-      .select("customer_email, recipient_email, package_code")
+      .select("customer_email, package_code, organization_id, quantity, id")
       .single();
 
     if (order) {
@@ -234,15 +393,34 @@ async function handleOrderStatus(
         .single();
 
       if (pkg) {
+        if (order.organization_id) {
+          await supabaseAdmin.from("esim_lines").upsert(
+            profiles.map((profile) => ({
+              organization_id: order.organization_id,
+              order_id: order.id,
+              package_code: profile.packageCode || order.package_code,
+              label: `${pkg.name} · ${profile.iccid.slice(-6)}`,
+              esim_tran_no: profile.esimTranNo,
+              iccid: profile.iccid,
+              qr_code_url: profile.qrCodeUrl,
+              smdp_address: profile.smdpAddress,
+              activation_code: profile.ac,
+              status: "unassigned",
+              data_mb: pkg.data_mb,
+              validity_days: pkg.validity_days,
+            })),
+            { onConflict: "esim_tran_no" },
+          );
+        }
         await sendEsimDeliveryEmail({
-          customerEmail: order.recipient_email ?? order.customer_email,
+          customerEmail: order.customer_email,
           packageName: pkg.name,
           dataMb: pkg.data_mb,
           validityDays: pkg.validity_days,
-          iccid: esim.iccid,
-          qrCodeUrl: esim.qrCodeUrl,
-          activationCode: esim.ac,
-          smdpAddress: esim.smdpAddress,
+          iccid: profiles[0]!.iccid,
+          qrCodeUrl: profiles[0]!.qrCodeUrl,
+          activationCode: profiles[0]!.ac,
+          smdpAddress: profiles[0]!.smdpAddress,
         });
       }
     }

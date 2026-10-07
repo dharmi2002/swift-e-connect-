@@ -10,122 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as BusinessRouteImport } from './routes/business'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as SignupRouteImport } from './routes/signup'
-import { Route as BusinessIndexRouteImport } from './routes/business.index'
-import { Route as BusinessBulkRouteImport } from './routes/business.bulk'
-import { Route as BusinessEmployeesRouteImport } from './routes/business.employees'
-import { Route as BusinessSignupRouteImport } from './routes/business.signup'
+import { Route as AccountRouteImport } from './routes/account'
+import { Route as PaymentRouteImport } from './routes/payment'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BusinessRoute = BusinessRouteImport.update({
-  id: '/business',
-  path: '/business',
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const PaymentRoute = PaymentRouteImport.update({
+  id: '/payment',
+  path: '/payment',
   getParentRoute: () => rootRouteImport,
-} as any)
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BusinessIndexRoute = BusinessIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => BusinessRoute,
-} as any)
-const BusinessBulkRoute = BusinessBulkRouteImport.update({
-  id: '/bulk',
-  path: '/bulk',
-  getParentRoute: () => BusinessRoute,
-} as any)
-const BusinessEmployeesRoute = BusinessEmployeesRouteImport.update({
-  id: '/employees',
-  path: '/employees',
-  getParentRoute: () => BusinessRoute,
-} as any)
-const BusinessSignupRoute = BusinessSignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => BusinessRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/business': typeof BusinessRouteWithChildren
-  '/login': typeof LoginRoute
-  '/signup': typeof SignupRoute
-  '/business/bulk': typeof BusinessBulkRoute
-  '/business/employees': typeof BusinessEmployeesRoute
-  '/business/signup': typeof BusinessSignupRoute
-  '/business/': typeof BusinessIndexRoute
+  '/account': typeof AccountRoute
+  '/payment': typeof PaymentRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/login': typeof LoginRoute
-  '/signup': typeof SignupRoute
-  '/business/bulk': typeof BusinessBulkRoute
-  '/business/employees': typeof BusinessEmployeesRoute
-  '/business/signup': typeof BusinessSignupRoute
-  '/business': typeof BusinessIndexRoute
+  '/account': typeof AccountRoute
+  '/payment': typeof PaymentRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/business': typeof BusinessRouteWithChildren
-  '/login': typeof LoginRoute
-  '/signup': typeof SignupRoute
-  '/business/bulk': typeof BusinessBulkRoute
-  '/business/employees': typeof BusinessEmployeesRoute
-  '/business/signup': typeof BusinessSignupRoute
-  '/business/': typeof BusinessIndexRoute
+  '/account': typeof AccountRoute
+  '/payment': typeof PaymentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/business'
-    | '/login'
-    | '/signup'
-    | '/business/bulk'
-    | '/business/employees'
-    | '/business/signup'
-    | '/business/'
+  fullPaths: '/' | '/account' | '/payment'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/login'
-    | '/signup'
-    | '/business/bulk'
-    | '/business/employees'
-    | '/business/signup'
-    | '/business'
-  id:
-    | '__root__'
-    | '/'
-    | '/business'
-    | '/login'
-    | '/signup'
-    | '/business/bulk'
-    | '/business/employees'
-    | '/business/signup'
-    | '/business/'
+  to: '/' | '/account' | '/payment'
+  id: '__root__' | '/' | '/account' | '/payment'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  BusinessRoute: typeof BusinessRouteWithChildren
-  LoginRoute: typeof LoginRoute
-  SignupRoute: typeof SignupRoute
+  AccountRoute: typeof AccountRoute
+  PaymentRoute: typeof PaymentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -137,81 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/business': {
-      id: '/business'
-      path: '/business'
-      fullPath: '/business'
-      preLoaderRoute: typeof BusinessRouteImport
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/payment': {
+      id: '/payment'
+      path: '/payment'
+      fullPath: '/payment'
+      preLoaderRoute: typeof PaymentRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/business/': {
-      id: '/business/'
-      path: '/'
-      fullPath: '/business/'
-      preLoaderRoute: typeof BusinessIndexRouteImport
-      parentRoute: typeof BusinessRoute
-    }
-    '/business/bulk': {
-      id: '/business/bulk'
-      path: '/bulk'
-      fullPath: '/business/bulk'
-      preLoaderRoute: typeof BusinessBulkRouteImport
-      parentRoute: typeof BusinessRoute
-    }
-    '/business/employees': {
-      id: '/business/employees'
-      path: '/employees'
-      fullPath: '/business/employees'
-      preLoaderRoute: typeof BusinessEmployeesRouteImport
-      parentRoute: typeof BusinessRoute
-    }
-    '/business/signup': {
-      id: '/business/signup'
-      path: '/signup'
-      fullPath: '/business/signup'
-      preLoaderRoute: typeof BusinessSignupRouteImport
-      parentRoute: typeof BusinessRoute
     }
   }
 }
 
-interface BusinessRouteChildren {
-  BusinessBulkRoute: typeof BusinessBulkRoute
-  BusinessEmployeesRoute: typeof BusinessEmployeesRoute
-  BusinessSignupRoute: typeof BusinessSignupRoute
-  BusinessIndexRoute: typeof BusinessIndexRoute
-}
-
-const BusinessRouteChildren: BusinessRouteChildren = {
-  BusinessBulkRoute: BusinessBulkRoute,
-  BusinessEmployeesRoute: BusinessEmployeesRoute,
-  BusinessSignupRoute: BusinessSignupRoute,
-  BusinessIndexRoute: BusinessIndexRoute,
-}
-
-const BusinessRouteWithChildren = BusinessRoute._addFileChildren(
-  BusinessRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  BusinessRoute: BusinessRouteWithChildren,
-  LoginRoute: LoginRoute,
-  SignupRoute: SignupRoute,
+  AccountRoute: AccountRoute,
+  PaymentRoute: PaymentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -12,6 +12,7 @@
 
 import { queryProfiles } from "./esimaccess";
 import { sendEsimDeliveryEmail } from "./email";
+import { fulfillOrderById, fulfillPaidTopup } from "./payment.server";
 
 /**
  * Order Polling Worker
@@ -23,19 +24,68 @@ import { sendEsimDeliveryEmail } from "./email";
 export async function pollStuckOrders(): Promise<{
   checked: number;
   completed: number;
+  recoveredPayments: number;
+  retriedTopups: number;
 }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
   const cutoff = new Date(Date.now() - 60_000).toISOString();
 
+  // A provider outage can happen after Paystack has already confirmed payment.
+  // Retry supplier order creation from the paid record instead of requiring support
+  // to reconcile it manually.
+  const { data: paidOrders } = await supabaseAdmin
+    .from("orders")
+    .select("id")
+    .eq("payment_status", "paid")
+    .is("order_no", null)
+    .in("status", ["payment_pending", "processing"])
+    .lt("created_at", cutoff)
+    .limit(20);
+  let recoveredPayments = 0;
+  for (const order of paidOrders ?? []) {
+    try {
+      await fulfillOrderById(order.id);
+      recoveredPayments++;
+    } catch (err) {
+      console.error(`Paid order recovery failed for ${order.id}:`, err);
+    }
+  }
+
+  // Paid top-ups remain in the paid state when a supplier call fails, making them
+  // safe to retry without charging the customer again.
+  const { data: paidTopups } = await supabaseAdmin
+    .from("esim_topups")
+    .select("id")
+    .eq("payment_status", "paid")
+    .eq("status", "paid")
+    .lt("created_at", cutoff)
+    .limit(20);
+  let retriedTopups = 0;
+  for (const topup of paidTopups ?? []) {
+    try {
+      await fulfillPaidTopup(topup.id);
+      retriedTopups++;
+    } catch (err) {
+      console.error(`Paid top-up recovery failed for ${topup.id}:`, err);
+    }
+  }
+
   const { data: stuckOrders } = await supabaseAdmin
     .from("orders")
-    .select("id, order_no, customer_email, recipient_email, package_code")
+    .select("id, order_no, customer_email, package_code, organization_id, payment_status")
     .eq("status", "processing")
+    .or("payment_status.eq.paid,payment_status.eq.unpaid")
     .lt("created_at", cutoff)
     .limit(20);
 
-  if (!stuckOrders?.length) return { checked: 0, completed: 0 };
+  if (!stuckOrders?.length)
+    return {
+      checked: paidOrders?.length ?? 0,
+      completed: 0,
+      recoveredPayments,
+      retriedTopups,
+    };
 
   let completed = 0;
 
@@ -59,7 +109,6 @@ export async function pollStuckOrders(): Promise<{
               activation_code: esim.ac,
               qr_code_url: esim.qrCodeUrl,
               smdp_address: esim.smdpAddress,
-              activated_at: new Date().toISOString(),
             })
             .eq("id", order.id);
 
@@ -71,16 +120,37 @@ export async function pollStuckOrders(): Promise<{
             .single();
 
           if (pkg) {
-            await sendEsimDeliveryEmail({
-              customerEmail: order.recipient_email ?? order.customer_email,
-              packageName: pkg.name,
-              dataMb: pkg.data_mb,
-              validityDays: pkg.validity_days,
-              iccid: esim.iccid,
-              qrCodeUrl: esim.qrCodeUrl,
-              activationCode: esim.ac,
-              smdpAddress: esim.smdpAddress,
-            });
+            if (order.organization_id) {
+              await supabaseAdmin.from("esim_lines").upsert(
+                profiles.map((profile) => ({
+                  organization_id: order.organization_id!,
+                  order_id: order.id,
+                  package_code: profile.packageCode || order.package_code,
+                  label: `${pkg.name} · ${profile.iccid.slice(-6)}`,
+                  esim_tran_no: profile.esimTranNo,
+                  iccid: profile.iccid,
+                  qr_code_url: profile.qrCodeUrl,
+                  smdp_address: profile.smdpAddress,
+                  activation_code: profile.ac,
+                  status: "unassigned",
+                  data_mb: pkg.data_mb,
+                  validity_days: pkg.validity_days,
+                })),
+                { onConflict: "esim_tran_no" },
+              );
+            }
+            for (const profile of profiles) {
+              await sendEsimDeliveryEmail({
+                customerEmail: order.customer_email,
+                packageName: pkg.name,
+                dataMb: pkg.data_mb,
+                validityDays: pkg.validity_days,
+                iccid: profile.iccid,
+                qrCodeUrl: profile.qrCodeUrl,
+                activationCode: profile.ac,
+                smdpAddress: profile.smdpAddress,
+              });
+            }
           }
 
           completed++;
@@ -93,5 +163,10 @@ export async function pollStuckOrders(): Promise<{
     }
   }
 
-  return { checked: stuckOrders.length, completed };
+  return {
+    checked: stuckOrders.length + (paidOrders?.length ?? 0),
+    completed,
+    recoveredPayments,
+    retriedTopups,
+  };
 }

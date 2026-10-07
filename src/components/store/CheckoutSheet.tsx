@@ -22,8 +22,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatData, formatUsd, type Package } from "@/lib/packages";
-import { placeOrder, getOrderStatus } from "@/services/order.server";
-import { StripePaymentForm } from "./StripePaymentForm";
+import { getOrderStatus, placeOrder } from "@/services/order.server";
+import { initializePaystackPayment } from "@/services/payment.server";
 import type { EsimResult } from "./EsimReadyDialog";
 
 const emailSchema = z
@@ -44,6 +44,8 @@ const payments = [
   { id: "paystack", label: "Card via Paystack", hint: "Visa / Mastercard" },
   { id: "stripe", label: "Card via Stripe", hint: "Visa / Mastercard / Amex" },
 ] as const;
+
+const paymentProvider = import.meta.env["VITE_PAYMENT_PROVIDER"] || "legacy";
 
 const trust = [
   { icon: Mail, label: "Instant email delivery" },
@@ -83,58 +85,54 @@ async function pollUntilReady(
 
 export function CheckoutSheet({
   pkg,
-  defaultEmail,
   onOpenChange,
   onComplete,
 }: {
   pkg: Package | null;
-  defaultEmail?: string | undefined;
   onOpenChange: (open: boolean) => void;
   onComplete: (esim: EsimResult) => void;
 }) {
   const [step, setStep] = useState(1);
-  const [email, setEmail] = useState(defaultEmail ?? "");
+  const [email, setEmail] = useState("");
   const [device, setDevice] = useState<string>("ios");
   const [error, setError] = useState<string | null>(null);
-  const [showStripeForm, setShowStripeForm] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (pkg) {
       setStep(1);
       setError(null);
-      setShowStripeForm(false);
-      setEmail((current) => current || defaultEmail || "");
     }
-    return () => abortRef.current?.abort();
-  }, [pkg, defaultEmail]);
+    const controller = abortRef.current;
+    return () => controller?.abort();
+  }, [pkg]);
 
   const purchase = useMutation({
-    mutationFn: async (input: { paymentMethod: string; stripePaymentIntentId?: string }) => {
+    mutationFn: async (paymentMethod: string) => {
       if (!pkg) throw new Error("No plan selected");
 
-      // 1. Create order via server function → eSIMAccess
+      if (paymentMethod === "paystack") {
+        // Opt-in secure path; supplier fulfillment happens only after payment verification.
+        const payment = await initializePaystackPayment({
+          data: { email: email.trim(), packageCode: pkg.code, deviceType: device },
+        });
+        window.location.assign(payment.authorizationUrl);
+        return null;
+      }
+
+      // Compatibility path retained for existing deployments that already handle payment
+      // outside this storefront. Set the Paystack path before public launch when possible.
       const { orderId } = await placeOrder({
-        data: {
-          email: email.trim(),
-          packageCode: pkg.code,
-          deviceType: device,
-          paymentMethod: input.paymentMethod,
-          stripePaymentIntentId: input.stripePaymentIntentId,
-        },
+        data: { email: email.trim(), packageCode: pkg.code, deviceType: device, paymentMethod },
       });
-
-      // 2. Poll until webhook delivers the eSIM profile
       const esim = await pollUntilReady(orderId);
-
-      // If planLabel wasn't populated from polling, build from local data
       if (esim.planLabel === "eSIM") {
         esim.planLabel = `${pkg.name} · ${formatData(pkg.data_mb)} / ${pkg.validity_days} days`;
       }
-
       return { ...esim, email: email.trim() } satisfies EsimResult;
     },
     onSuccess: (esim) => {
+      if (!esim) return;
       onOpenChange(false);
       onComplete(esim);
     },
@@ -217,23 +215,6 @@ export function CheckoutSheet({
                   Continue to payment
                 </Button>
               </div>
-            ) : showStripeForm ? (
-              <div className="pb-2">
-                <StripePaymentForm
-                  packageCode={pkg.code}
-                  amountUsd={pkg.retail_price_usd}
-                  onBack={() => setShowStripeForm(false)}
-                  onPaid={(stripePaymentIntentId) =>
-                    purchase.mutate({ paymentMethod: "stripe", stripePaymentIntentId })
-                  }
-                />
-                {purchase.isPending && (
-                  <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <p>Provisioning your eSIM — this takes a few seconds…</p>
-                  </div>
-                )}
-              </div>
             ) : (
               <div className="space-y-5 pb-2">
                 <button
@@ -245,16 +226,15 @@ export function CheckoutSheet({
                 </button>
 
                 <div className="grid gap-2">
-                  {payments.map((p) => (
+                  {(paymentProvider === "paystack"
+                    ? payments.filter((p) => p.id === "paystack")
+                    : payments
+                  ).map((p) => (
                     <button
                       key={p.id}
                       type="button"
                       disabled={purchase.isPending}
-                      onClick={() =>
-                        p.id === "stripe"
-                          ? setShowStripeForm(true)
-                          : purchase.mutate({ paymentMethod: p.id })
-                      }
+                      onClick={() => purchase.mutate(p.id)}
                       className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted disabled:opacity-60"
                     >
                       <CreditCard className="h-5 w-5 shrink-0 text-primary" />

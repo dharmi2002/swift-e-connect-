@@ -9,6 +9,9 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  // Pin the local preview to a Wrangler-supported date. Cloudflare deployments can
+  // raise this deliberately after their Wrangler/runtime version is upgraded.
+  nitro: { compatibilityDate: "2026-05-03" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

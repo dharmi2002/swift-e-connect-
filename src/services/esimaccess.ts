@@ -152,12 +152,13 @@ export async function createOrder(
   packageCode: string,
   transactionId: string,
   wholesalePrice?: number, // × 10,000
+  count = 1,
 ): Promise<OrderResult> {
   const packageInfoList: Array<{
     packageCode: string;
     count: number;
     price?: number;
-  }> = [{ packageCode, count: 1 }];
+  }> = [{ packageCode, count }];
   if (wholesalePrice !== undefined) {
     packageInfoList[0]!.price = wholesalePrice;
   }
