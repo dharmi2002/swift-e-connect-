@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -13,6 +13,7 @@ import {
   Headphones,
   Instagram,
   Layers3,
+  LogIn,
   Linkedin,
   Menu,
   MessageSquare,
@@ -26,6 +27,7 @@ import {
   Star,
   Twitter,
   Wifi,
+  X,
   Youtube,
   Zap,
 } from "lucide-react";
@@ -605,7 +607,29 @@ function AnnouncementBar() {
     </div>
   );
 }
+const headerLinks = [
+  { label: "Plans", href: "#plans" },
+  { label: "How it works", href: "#how-it-works" },
+  { label: "Coverage", href: "#coverage" },
+  { label: "Business", href: "#business" },
+  { label: "FAQ", href: "#faq" },
+  { label: "Support", href: "#support" },
+];
+
 function SiteHeader() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  const closeMenu = () => setMenuOpen(false);
+
   return (
     <header className="site-header">
       <div className="page-shell header-inner">
@@ -613,9 +637,22 @@ function SiteHeader() {
           <span className="brand-mark" />
           <span>eLango</span>
         </a>
-        <a className="menu-button" href="#plans">
-          <Menu /> Menu
-        </a>
+        <button
+          type="button"
+          className="menu-button"
+          aria-expanded={menuOpen}
+          aria-controls="site-menu"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X /> : <Menu />} Menu
+        </button>
+        <nav className="header-nav" aria-label="Main">
+          {headerLinks.map((link) => (
+            <a key={link.href} href={link.href}>
+              {link.label}
+            </a>
+          ))}
+        </nav>
         <div id="device-check" className="header-actions">
           <a className="account-link" href="/account">
             Business account
@@ -625,8 +662,35 @@ function SiteHeader() {
               <Smartphone /> <span>Check device</span>
             </Button>
           </CompatibilityDialog>
+          <a className="signin-button" href="/account">
+            <LogIn /> <span>Log in</span>
+          </a>
         </div>
       </div>
+      {menuOpen && (
+        <div id="site-menu" className="mobile-menu">
+          <nav className="page-shell mobile-menu-inner" aria-label="Menu">
+            {headerLinks.map((link) => (
+              <a key={link.href} href={link.href} onClick={closeMenu}>
+                {link.label}
+              </a>
+            ))}
+            <div className="mobile-menu-actions">
+              <a className="signin-button" href="/account" onClick={closeMenu}>
+                <LogIn /> Log in
+              </a>
+              <a className="mobile-menu-secondary" href="/account" onClick={closeMenu}>
+                <Building2 /> Business account
+              </a>
+              <CompatibilityDialog>
+                <Button variant="soft" className="mobile-menu-secondary">
+                  <Smartphone /> Check device
+                </Button>
+              </CompatibilityDialog>
+            </div>
+          </nav>
+        </div>
+      )}
     </header>
   );
 }

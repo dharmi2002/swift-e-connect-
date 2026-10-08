@@ -165,6 +165,79 @@
   gap: 10px;
   align-items: center;
 }
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.header-nav a {
+  color: #4b3b5c;
+}
+.header-nav a:hover {
+  color: #e94d91;
+}
+.menu-button {
+  display: none;
+  cursor: pointer;
+}
+.mobile-menu {
+  border-top: 1px solid #f0e6f0;
+  background: rgba(255, 250, 255, 0.98);
+  box-shadow: 0 18px 30px rgba(33, 21, 47, 0.08);
+}
+.mobile-menu-inner {
+  display: grid;
+  padding-block: 12px 20px;
+}
+.mobile-menu-inner > a {
+  padding: 13px 4px;
+  font-weight: 700;
+  border-bottom: 1px solid #f3eaf3;
+}
+.mobile-menu-inner > a:hover {
+  color: #e94d91;
+}
+.mobile-menu-actions {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+}
+.mobile-menu-actions .signin-button,
+.mobile-menu-secondary {
+  justify-content: center;
+  width: 100%;
+}
+.mobile-menu-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 13px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #21152f;
+  height: auto;
+}
+.mobile-menu-secondary svg {
+  width: 15px;
+}
+@media (max-width: 1060px) {
+  .header-nav {
+    display: none;
+  }
+  .menu-button {
+    display: inline-flex;
+  }
+}
+@media (min-width: 1061px) {
+  .mobile-menu {
+    display: none;
+  }
+}
 .signin-button,
 .dark-button {
   display: inline-flex;
@@ -175,6 +248,9 @@
   border-radius: 13px;
   padding: 11px 18px;
   font-weight: 800;
+}
+.signin-button {
+  font-size: 14px;
 }
 .signin-button svg {
   width: 15px;
